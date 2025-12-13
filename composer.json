@@ -1,0 +1,23 @@
+{
+    "name": "puremapper/puremapper",
+    "description": "A lightweight PHP data mapper and unit of work for pure PHP entities",
+    "type": "library",
+    "require": {
+        "illuminate/database": "^10.0 || ^11.0 || ^12.0",
+        "php": ">=8.1"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Puremapper\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Pham Thao",
+            "email": "phamthao03596@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
