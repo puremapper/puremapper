@@ -56,7 +56,7 @@ final class UnitOfWork
     {
         $id = $this->hydrator->getIdentifier($entity);
 
-        if ($id !== null && $this->entityStates->contains($entity)) {
+        if ($id !== null && $this->entityStates->offsetExists($entity)) {
             // Already tracked
             return;
         }
@@ -75,7 +75,7 @@ final class UnitOfWork
      */
     public function markDirty(object $entity): void
     {
-        if (!$this->entityStates->contains($entity)) {
+        if (!$this->entityStates->offsetExists($entity)) {
             throw new \RuntimeException('Entity is not managed.');
         }
 
@@ -101,7 +101,7 @@ final class UnitOfWork
      */
     public function remove(object $entity): void
     {
-        if (!$this->entityStates->contains($entity)) {
+        if (!$this->entityStates->offsetExists($entity)) {
             throw new \RuntimeException('Entity is not managed.');
         }
 
@@ -113,7 +113,7 @@ final class UnitOfWork
                 $this->scheduledInserts,
                 fn($e) => $e !== $entity
             );
-            $this->entityStates->detach($entity);
+            $this->entityStates->offsetUnset($entity);
             return;
         }
 
@@ -302,7 +302,7 @@ final class UnitOfWork
             $class = $entity::class;
             $id = $this->hydrator->getIdentifier($entity);
             $this->identityMap->remove($class, $id);
-            $this->entityStates->detach($entity);
+            $this->entityStates->offsetUnset($entity);
         }
 
         $this->scheduledInserts = [];
