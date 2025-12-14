@@ -598,6 +598,341 @@ final class UserRepository implements RepositoryInterface
 
 ---
 
+## Advanced Usage
+
+### Complex Query Composition
+
+Build sophisticated queries by chaining multiple conditions:
+
+```php
+// Multiple conditions with different operators
+$users = $em->query(User::class)
+    ->where('status', '=', 'active')
+    ->where('age', '>=', 18)
+    ->where('role', '!=', 'guest')
+    ->where('email', 'LIKE', '%@company.com')
+    ->orderBy('created_at', 'desc')
+    ->orderBy('name', 'asc')
+    ->limit(20)
+    ->offset(40)
+    ->get();
+
+// Composite primary key lookup
+$tenantUser = $em->query(TenantUser::class)
+    ->find(['tenant_id' => 1, 'user_id' => 42]);
+
+// Combine filtering with eager loading
+$orders = $em->query(Order::class)
+    ->with('items', 'customer')
+    ->where('status', '=', 'pending')
+    ->where('total', '>', 100)
+    ->orderBy('created_at', 'desc')
+    ->limit(50)
+    ->get();
+```
+
+### Hydration Flow
+
+Hydration is the process of converting database rows into PHP objects. Here's how it works:
+
+```
+Database Row (array)
+       |
+       v
++------------------+
+|    Hydrator      |
++------------------+
+       |
+       | 1. Create empty instance (no constructor)
+       | 2. For each mapped field:
+       |    - Get value from row
+       |    - Apply TypeConverter if registered
+       |    - Set property via reflection
+       v
+PHP Entity (object)
+```
+
+**Example flow:**
+
+```php
+// Database returns:
+['id' => 1, 'name' => 'John', 'created_at' => '2024-12-14 10:30:00', 'settings' => '{"theme":"dark"}']
+
+// After hydration:
+$user->id = 1;                                              // int (no conversion)
+$user->name = 'John';                                       // string (no conversion)
+$user->createdAt = DateTimeImmutable('2024-12-14 10:30:00'); // DateTimeConverter applied
+$user->settings = ['theme' => 'dark'];                      // JsonConverter applied
+```
+
+**Extraction** (reverse process for INSERT/UPDATE):
+
+```php
+// PHP Entity:
+$user->id = 1;
+$user->createdAt = new DateTimeImmutable('2024-12-14');
+$user->settings = ['theme' => 'dark'];
+
+// After extraction (ready for database):
+['id' => 1, 'created_at' => '2024-12-14 00:00:00', 'settings' => '{"theme":"dark"}']
+```
+
+### Custom TypeConverter
+
+Create converters for domain-specific types:
+
+```php
+use PureMapper\Type\TypeConverter;
+
+// Value Object for money
+final class Money
+{
+    public function __construct(
+        public readonly int $cents,
+        public readonly string $currency = 'USD',
+    ) {}
+
+    public static function fromCents(int $cents): self
+    {
+        return new self($cents);
+    }
+}
+
+// Converter implementation
+final class MoneyConverter implements TypeConverter
+{
+    public function toPHP(mixed $value): Money
+    {
+        return Money::fromCents((int) $value);
+    }
+
+    public function toDatabase(mixed $value): int
+    {
+        return $value->cents;
+    }
+}
+
+// UUID converter example
+final class UuidConverter implements TypeConverter
+{
+    public function toPHP(mixed $value): Uuid
+    {
+        return Uuid::fromString((string) $value);
+    }
+
+    public function toDatabase(mixed $value): string
+    {
+        return $value->toString();
+    }
+}
+
+// Register and use
+$typeRegistry->register('money', new MoneyConverter());
+$typeRegistry->register('uuid', new UuidConverter());
+
+$mapper = (new EntityMapper(Product::class))
+    ->table('products')
+    ->id('id', 'uuid')           // UUID primary key
+    ->field('name', 'string')
+    ->field('price', 'money')    // Stored as cents in DB
+    ->build();
+```
+
+### Raw Queries with Manual Hydration
+
+For complex queries (JOINs, subqueries, aggregations), use raw SQL with manual hydration:
+
+```php
+final class OrderRepository implements RepositoryInterface
+{
+    public function __construct(
+        private EntityManager $em,
+    ) {}
+
+    /**
+     * Complex JOIN query - get orders with customer data in single query.
+     */
+    public function findWithCustomerDetails(int $orderId): ?array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                o.id, o.status, o.total, o.created_at,
+                c.id as customer_id, c.name as customer_name, c.email as customer_email
+            FROM orders o
+            INNER JOIN customers c ON c.id = o.customer_id
+            WHERE o.id = ?
+        SQL;
+
+        $row = $this->em->getConnection()->selectOne($sql, [$orderId]);
+
+        if ($row === null) {
+            return null;
+        }
+
+        return [
+            'order' => $this->em->getHydrator()->hydrate(Order::class, (array) $row),
+            'customer' => $this->em->getHydrator()->hydrate(Customer::class, [
+                'id' => $row->customer_id,
+                'name' => $row->customer_name,
+                'email' => $row->customer_email,
+            ]),
+        ];
+    }
+
+    /**
+     * Subquery example - find customers with order count.
+     */
+    public function findTopCustomers(int $minOrders = 5): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                c.*,
+                (SELECT COUNT(*) FROM orders WHERE customer_id = c.id) as order_count,
+                (SELECT SUM(total) FROM orders WHERE customer_id = c.id) as total_spent
+            FROM customers c
+            HAVING order_count >= ?
+            ORDER BY total_spent DESC
+            LIMIT 100
+        SQL;
+
+        $rows = $this->em->getConnection()->select($sql, [$minOrders]);
+        $hydrator = $this->em->getHydrator();
+
+        return array_map(function ($row) use ($hydrator) {
+            $customer = $hydrator->hydrate(Customer::class, (array) $row);
+            // Attach computed fields
+            $customer->orderCount = (int) $row->order_count;
+            $customer->totalSpent = (int) $row->total_spent;
+            return $customer;
+        }, $rows);
+    }
+
+    /**
+     * Aggregation query - monthly sales report.
+     */
+    public function getMonthlySalesReport(int $year): array
+    {
+        $sql = <<<'SQL'
+            SELECT
+                MONTH(created_at) as month,
+                COUNT(*) as order_count,
+                SUM(total) as revenue,
+                AVG(total) as avg_order_value
+            FROM orders
+            WHERE YEAR(created_at) = ? AND status = 'completed'
+            GROUP BY MONTH(created_at)
+            ORDER BY month
+        SQL;
+
+        return $this->em->getConnection()->select($sql, [$year]);
+    }
+
+    /**
+     * Complex WHERE with OR conditions using Query Builder.
+     */
+    public function searchOrders(string $keyword): array
+    {
+        $rows = $this->em->getConnection()
+            ->table('orders')
+            ->where(function ($query) use ($keyword) {
+                $query->where('id', '=', $keyword)
+                    ->orWhere('reference', 'LIKE', "%{$keyword}%")
+                    ->orWhere('notes', 'LIKE', "%{$keyword}%");
+            })
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get();
+
+        return array_map(
+            fn ($row) => $this->em->getHydrator()->hydrate(Order::class, (array) $row),
+            $rows->all()
+        );
+    }
+
+    /**
+     * Batch hydration with relations loaded separately.
+     */
+    public function findRecentWithItems(int $days = 7): array
+    {
+        // 1. Get orders with raw query
+        $sql = <<<'SQL'
+            SELECT o.*
+            FROM orders o
+            WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+              AND o.status IN ('pending', 'processing')
+            ORDER BY o.created_at DESC
+        SQL;
+
+        $rows = $this->em->getConnection()->select($sql, [$days]);
+        $hydrator = $this->em->getHydrator();
+
+        $orders = array_map(
+            fn ($row) => $hydrator->hydrate(Order::class, (array) $row),
+            $rows
+        );
+
+        if (empty($orders)) {
+            return [];
+        }
+
+        // 2. Batch load items (avoid N+1)
+        $orderIds = array_map(fn ($o) => $o->id, $orders);
+        $itemRows = $this->em->getConnection()
+            ->table('order_items')
+            ->whereIn('order_id', $orderIds)
+            ->get();
+
+        // 3. Group items by order_id
+        $itemsByOrder = [];
+        foreach ($itemRows as $row) {
+            $itemsByOrder[$row->order_id][] = $hydrator->hydrate(OrderItem::class, (array) $row);
+        }
+
+        // 4. Assign items to orders
+        foreach ($orders as $order) {
+            $order->items = $itemsByOrder[$order->id] ?? [];
+        }
+
+        return $orders;
+    }
+
+    // Standard interface methods
+    public function find(int|string|array $id): ?Order
+    {
+        return $this->em->query(Order::class)->find($id);
+    }
+
+    public function findAll(): array
+    {
+        return $this->em->query(Order::class)->get();
+    }
+
+    public function findBy(array $criteria): array
+    {
+        $query = $this->em->query(Order::class);
+        foreach ($criteria as $field => $value) {
+            $query->where($field, '=', $value);
+        }
+        return $query->get();
+    }
+}
+```
+
+**Key methods for raw queries:**
+
+| Method | Returns | Use Case |
+|--------|---------|----------|
+| `$em->getConnection()` | `ConnectionInterface` | Access Illuminate Query Builder |
+| `$em->getHydrator()` | `Hydrator` | Convert rows to entities |
+| `$connection->select($sql, $bindings)` | `array` | Raw SELECT query |
+| `$connection->selectOne($sql, $bindings)` | `object\|null` | Single row query |
+| `$connection->table($name)` | `Builder` | Fluent Query Builder |
+| `$hydrator->hydrate($class, $row)` | `object` | Row to entity |
+| `$hydrator->extract($entity)` | `array` | Entity to row |
+
+---
+
 ## Why PureMapper?
 
 | Feature                   | PureMapper | Doctrine | Eloquent |
