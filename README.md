@@ -14,10 +14,48 @@ It is designed for developers who want:
 
 ---
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Philosophy](#philosophy)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Defining Entities](#defining-entities)
+- [Mapping with Fluent DSL](#mapping-with-fluent-dsl)
+- [Type Conversion](#type-conversion)
+- [Relations](#relations)
+- [Query Builder](#query-builder)
+- [Unit of Work](#unit-of-work)
+- [Metadata Caching](#metadata-caching)
+- [Identity Map](#identity-map)
+- [Repository Interface](#repository-interface-optional)
+- [Advanced Usage](#advanced-usage)
+- [Why PureMapper?](#why-puremapper)
+- [When NOT to Use PureMapper](#when-not-to-use-puremapper)
+- [Roadmap](#roadmap)
+- [License](#license)
+
+---
+
 ## Quick Start
 
 ```php
-// 1. Define a pure entity
+// 1. Set up database connection (illuminate/database)
+use Illuminate\Database\Capsule\Manager as Capsule;
+
+$capsule = new Capsule();
+$capsule->addConnection([
+    'driver'    => 'mysql',
+    'host'      => 'localhost',
+    'database'  => 'myapp',
+    'username'  => 'root',
+    'password'  => '',
+    'charset'   => 'utf8mb4',
+    'collation' => 'utf8mb4_unicode_ci',
+]);
+$connection = $capsule->getConnection();
+
+// 2. Define a pure entity
 final class User
 {
     public ?int $id = null;
@@ -26,7 +64,13 @@ final class User
     public DateTimeImmutable $createdAt;
 }
 
-// 2. Define mapping externally
+// 3. Set up PureMapper
+use PureMapper\EntityManager;
+use PureMapper\Mapping\EntityMapper;
+use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Type\TypeRegistry;
+
+$typeRegistry = new TypeRegistry();
 $registry = new MetadataRegistry();
 $registry->register(
     (new EntityMapper(User::class))
@@ -38,7 +82,9 @@ $registry->register(
         ->build()
 );
 
-// 3. Query entities with relations
+$em = new EntityManager($connection, $registry, $typeRegistry);
+
+// 4. Query entities with relations
 $user = $em->query(User::class)
     ->with('posts')
     ->find(1);
@@ -59,7 +105,7 @@ class UserRepository implements RepositoryInterface
     }
 }
 
-// 4. Persist entities
+// 5. Persist entities
 $user = new User();
 $user->name = 'John';
 $user->email = 'john@example.com';
