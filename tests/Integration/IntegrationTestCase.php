@@ -36,7 +36,7 @@ abstract class IntegrationTestCase extends TestCase
         $this->em = new EntityManager(
             $this->connection,
             $this->metadataRegistry,
-            $this->typeRegistry
+            $this->typeRegistry,
         );
     }
 

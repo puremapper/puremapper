@@ -18,8 +18,7 @@ final readonly class EntityMetadata
         public string|array $primaryKey,
         public array $fields = [],
         public array $relations = [],
-    ) {
-    }
+    ) {}
 
     /**
      * Get the column name for a property.
@@ -54,7 +53,7 @@ final readonly class EntityMetadata
      */
     public function getPrimaryKeyColumns(): array
     {
-        $keys = is_array($this->primaryKey) ? $this->primaryKey : [$this->primaryKey];
+        $keys = \is_array($this->primaryKey) ? $this->primaryKey : [$this->primaryKey];
         $columns = [];
 
         foreach ($keys as $key) {

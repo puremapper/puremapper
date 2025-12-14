@@ -14,8 +14,7 @@ final class EnumConverter implements TypeConverter
      */
     public function __construct(
         private readonly string $enumClass,
-    ) {
-    }
+    ) {}
 
     public function toPHP(mixed $value): ?BackedEnum
     {

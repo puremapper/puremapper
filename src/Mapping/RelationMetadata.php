@@ -16,6 +16,5 @@ final readonly class RelationMetadata
         public string $foreignKey,
         public ?string $pivotTable = null,
         public ?string $relatedKey = null,
-    ) {
-    }
+    ) {}
 }

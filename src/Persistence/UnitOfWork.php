@@ -7,7 +7,10 @@ namespace PureMapper\Persistence;
 use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\MetadataRegistryInterface;
+use ReflectionProperty;
+use RuntimeException;
 use SplObjectStorage;
+use Throwable;
 
 final class UnitOfWork
 {
@@ -76,7 +79,7 @@ final class UnitOfWork
     public function markDirty(object $entity): void
     {
         if (!$this->entityStates->offsetExists($entity)) {
-            throw new \RuntimeException('Entity is not managed.');
+            throw new RuntimeException('Entity is not managed.');
         }
 
         $state = $this->entityStates[$entity];
@@ -86,10 +89,10 @@ final class UnitOfWork
         }
 
         if ($state === EntityState::Removed) {
-            throw new \RuntimeException('Cannot modify a removed entity.');
+            throw new RuntimeException('Cannot modify a removed entity.');
         }
 
-        if (!in_array($entity, $this->scheduledUpdates, true)) {
+        if (!\in_array($entity, $this->scheduledUpdates, true)) {
             $this->scheduledUpdates[] = $entity;
         }
 
@@ -102,7 +105,7 @@ final class UnitOfWork
     public function remove(object $entity): void
     {
         if (!$this->entityStates->offsetExists($entity)) {
-            throw new \RuntimeException('Entity is not managed.');
+            throw new RuntimeException('Entity is not managed.');
         }
 
         $state = $this->entityStates[$entity];
@@ -111,7 +114,7 @@ final class UnitOfWork
             // Not yet persisted, just remove from inserts
             $this->scheduledInserts = array_filter(
                 $this->scheduledInserts,
-                fn($e) => $e !== $entity
+                fn($e) => $e !== $entity,
             );
             $this->entityStates->offsetUnset($entity);
             return;
@@ -140,7 +143,7 @@ final class UnitOfWork
             }
 
             $this->postCommit();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             if ($this->autoTransaction) {
                 $this->connection->rollBack();
             }
@@ -191,7 +194,7 @@ final class UnitOfWork
             return true;
         }
 
-        if (is_array($id)) {
+        if (\is_array($id)) {
             return array_filter($id, fn($v) => $v !== null && $v !== 0) === [];
         }
 
@@ -206,7 +209,7 @@ final class UnitOfWork
             $data = $this->hydrator->extract($entity);
 
             // Remove null primary key for auto-increment
-            $pk = is_array($metadata->primaryKey)
+            $pk = \is_array($metadata->primaryKey)
                 ? $metadata->primaryKey
                 : [$metadata->primaryKey];
 
@@ -218,11 +221,11 @@ final class UnitOfWork
             }
 
             // Get last insert ID for single auto-increment keys
-            if (!is_array($metadata->primaryKey)) {
+            if (!\is_array($metadata->primaryKey)) {
                 $column = $metadata->fields[$metadata->primaryKey]->column ?? $metadata->primaryKey;
                 if (!isset($data[$column])) {
                     $id = $this->connection->table($metadata->table)->insertGetId($data);
-                    $reflection = new \ReflectionProperty($entity, $metadata->primaryKey);
+                    $reflection = new ReflectionProperty($entity, $metadata->primaryKey);
                     $reflection->setValue($entity, (int) $id);
                 } else {
                     $this->connection->table($metadata->table)->insert($data);
@@ -242,7 +245,7 @@ final class UnitOfWork
             $id = $this->hydrator->getIdentifier($entity);
 
             // Build WHERE clause for primary key
-            $pk = is_array($metadata->primaryKey)
+            $pk = \is_array($metadata->primaryKey)
                 ? $metadata->primaryKey
                 : [$metadata->primaryKey];
 
@@ -250,7 +253,7 @@ final class UnitOfWork
 
             foreach ($pk as $key) {
                 $column = $metadata->fields[$key]->column ?? $key;
-                $value = is_array($id) ? $id[$key] : $id;
+                $value = \is_array($id) ? $id[$key] : $id;
                 $query->where($column, '=', $value);
 
                 // Remove PK from update data
@@ -268,7 +271,7 @@ final class UnitOfWork
             $metadata = $this->metadataRegistry->get($class);
             $id = $this->hydrator->getIdentifier($entity);
 
-            $pk = is_array($metadata->primaryKey)
+            $pk = \is_array($metadata->primaryKey)
                 ? $metadata->primaryKey
                 : [$metadata->primaryKey];
 
@@ -276,7 +279,7 @@ final class UnitOfWork
 
             foreach ($pk as $key) {
                 $column = $metadata->fields[$key]->column ?? $key;
-                $value = is_array($id) ? $id[$key] : $id;
+                $value = \is_array($id) ? $id[$key] : $id;
                 $query->where($column, '=', $value);
             }
 

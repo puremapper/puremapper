@@ -98,7 +98,7 @@ final class CachedMetadataRegistry implements MetadataRegistryInterface
         $cacheKey = $this->buildKey(self::ALL_METADATA_KEY);
         $cached = $this->cache->get($cacheKey);
 
-        if (is_array($cached)) {
+        if (\is_array($cached)) {
             $this->runtimeCache = array_merge($this->runtimeCache, $cached);
             return $cached;
         }
@@ -187,11 +187,11 @@ final class CachedMetadataRegistry implements MetadataRegistryInterface
 
     private function buildKey(string $identifier): string
     {
-        return sprintf(
+        return \sprintf(
             '%sv%d_%s',
             $this->prefix,
             self::CACHE_VERSION,
-            $this->normalizeClass($identifier)
+            $this->normalizeClass($identifier),
         );
     }
 

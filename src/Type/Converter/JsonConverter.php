@@ -17,7 +17,7 @@ final class JsonConverter implements TypeConverter
             return null;
         }
 
-        if (is_array($value)) {
+        if (\is_array($value)) {
             return $value;
         }
 

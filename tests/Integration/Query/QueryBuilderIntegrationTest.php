@@ -28,7 +28,7 @@ final class QueryBuilderIntegrationTest extends IntegrationTestCase
                 ->id('id')
                 ->field('name', 'string')
                 ->field('price', 'int')
-                ->build()
+                ->build(),
         );
     }
 

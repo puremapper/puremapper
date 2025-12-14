@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PureMapper\Mapping;
 
+use InvalidArgumentException;
+
 final class EntityMapper
 {
     private ?string $table = null;
@@ -22,8 +24,7 @@ final class EntityMapper
      */
     public function __construct(
         private readonly string $entityClass,
-    ) {
-    }
+    ) {}
 
     public function table(string $table): self
     {
@@ -40,7 +41,7 @@ final class EntityMapper
         $this->primaryKey = $property;
 
         // Auto-register id fields if not already registered
-        $properties = is_array($property) ? $property : [$property];
+        $properties = \is_array($property) ? $property : [$property];
         foreach ($properties as $prop) {
             if (!isset($this->fields[$prop])) {
                 $this->field($prop, 'int');
@@ -131,11 +132,11 @@ final class EntityMapper
     public function build(): EntityMetadata
     {
         if ($this->table === null) {
-            throw new \InvalidArgumentException('Table name must be set.');
+            throw new InvalidArgumentException('Table name must be set.');
         }
 
         if ($this->primaryKey === null) {
-            throw new \InvalidArgumentException('Primary key must be set.');
+            throw new InvalidArgumentException('Primary key must be set.');
         }
 
         return new EntityMetadata(

@@ -203,7 +203,7 @@ final class CachedMetadataRegistryTest extends TestCase
 
         // Verify both are cached
         $cacheData = $this->cache->getData();
-        $this->assertGreaterThanOrEqual(2, count($cacheData));
+        $this->assertGreaterThanOrEqual(2, \count($cacheData));
     }
 
     public function testWarmIsIdempotent(): void

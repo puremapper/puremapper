@@ -10,6 +10,7 @@ use PureMapper\Mapping\EntityMetadata;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Mapping\RelationType;
 use PureMapper\Persistence\UnitOfWork;
+use ReflectionProperty;
 
 /**
  * @template T of object
@@ -43,8 +44,7 @@ final class EntityQuery
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly Hydrator $hydrator,
         private readonly UnitOfWork $unitOfWork,
-    ) {
-    }
+    ) {}
 
     /**
      * @param int|string|array<string, mixed> $id
@@ -210,15 +210,15 @@ final class EntityQuery
         EntityMetadata $metadata,
         int|string|array $id,
     ): void {
-        $keys = is_array($metadata->primaryKey)
+        $keys = \is_array($metadata->primaryKey)
             ? $metadata->primaryKey
             : [$metadata->primaryKey];
 
-        $values = is_array($id) ? $id : [$id];
+        $values = \is_array($id) ? $id : [$id];
 
         foreach ($keys as $i => $key) {
             $column = $metadata->fields[$key]->column ?? $key;
-            $value = is_array($id) ? ($id[$key] ?? $values[$i] ?? null) : $id;
+            $value = \is_array($id) ? ($id[$key] ?? $values[$i] ?? null) : $id;
             $query->where($column, '=', $value);
         }
     }
@@ -250,11 +250,11 @@ final class EntityQuery
      */
     private function extractIdFromRow(array $row, EntityMetadata $metadata): mixed
     {
-        $keys = is_array($metadata->primaryKey)
+        $keys = \is_array($metadata->primaryKey)
             ? $metadata->primaryKey
             : [$metadata->primaryKey];
 
-        if (count($keys) === 1) {
+        if (\count($keys) === 1) {
             $column = $metadata->fields[$keys[0]]->column ?? $keys[0];
             return $row[$column] ?? null;
         }
@@ -331,7 +331,7 @@ final class EntityQuery
         }
 
         // Assign to entities
-        $reflection = new \ReflectionProperty($this->entityClass, $relationName);
+        $reflection = new ReflectionProperty($this->entityClass, $relationName);
         foreach ($entities as $entity) {
             $id = $this->hydrator->getIdentifier($entity);
             $related = $relatedByFk[$id] ?? null;
@@ -377,7 +377,7 @@ final class EntityQuery
         }
 
         // Assign to entities
-        $reflection = new \ReflectionProperty($this->entityClass, $relationName);
+        $reflection = new ReflectionProperty($this->entityClass, $relationName);
         foreach ($entities as $entity) {
             $id = $this->hydrator->getIdentifier($entity);
             $related = $relatedByFk[$id] ?? [];
@@ -393,13 +393,13 @@ final class EntityQuery
         $relation = $metadata->relations[$relationName];
         $targetMetadata = $this->metadataRegistry->get($relation->targetEntity);
         $foreignKey = $relation->foreignKey;
-        $targetPk = is_array($targetMetadata->primaryKey)
+        $targetPk = \is_array($targetMetadata->primaryKey)
             ? $targetMetadata->primaryKey[0]
             : $targetMetadata->primaryKey;
         $targetPkColumn = $targetMetadata->fields[$targetPk]->column ?? $targetPk;
 
         // Collect foreign key values
-        $fkReflection = new \ReflectionProperty($this->entityClass, $this->getPropertyForColumn($metadata, $foreignKey) ?? $foreignKey);
+        $fkReflection = new ReflectionProperty($this->entityClass, $this->getPropertyForColumn($metadata, $foreignKey) ?? $foreignKey);
         $fkValues = [];
         foreach ($entities as $entity) {
             if ($fkReflection->isInitialized($entity)) {
@@ -430,7 +430,7 @@ final class EntityQuery
         }
 
         // Assign to entities
-        $reflection = new \ReflectionProperty($this->entityClass, $relationName);
+        $reflection = new ReflectionProperty($this->entityClass, $relationName);
         foreach ($entities as $entity) {
             $fkValue = $fkReflection->isInitialized($entity) ? $fkReflection->getValue($entity) : null;
             $related = $fkValue !== null ? ($relatedByPk[$fkValue] ?? null) : null;
@@ -453,7 +453,7 @@ final class EntityQuery
             return;
         }
 
-        $targetPk = is_array($targetMetadata->primaryKey)
+        $targetPk = \is_array($targetMetadata->primaryKey)
             ? $targetMetadata->primaryKey[0]
             : $targetMetadata->primaryKey;
         $targetPkColumn = $targetMetadata->fields[$targetPk]->column ?? $targetPk;
@@ -509,7 +509,7 @@ final class EntityQuery
         }
 
         // Assign to entities
-        $reflection = new \ReflectionProperty($this->entityClass, $relationName);
+        $reflection = new ReflectionProperty($this->entityClass, $relationName);
         foreach ($entities as $entity) {
             $id = $this->hydrator->getIdentifier($entity);
             $relatedEntities = [];

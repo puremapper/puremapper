@@ -31,7 +31,7 @@ final class TypeConversionRoundTripTest extends IntegrationTestCase
                 ->field('title', 'string')
                 ->field('createdAt', 'datetime', 'created_at')
                 ->field('metadata', 'json')
-                ->build()
+                ->build(),
         );
     }
 
@@ -55,7 +55,7 @@ final class TypeConversionRoundTripTest extends IntegrationTestCase
         $this->assertInstanceOf(DateTimeImmutable::class, $fetched->createdAt);
         $this->assertSame(
             $now->format('Y-m-d H:i:s'),
-            $fetched->createdAt->format('Y-m-d H:i:s')
+            $fetched->createdAt->format('Y-m-d H:i:s'),
         );
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PureMapper\Tests\Unit\Mapping;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use PureMapper\Mapping\EntityMapper;
 use PureMapper\Mapping\RelationType;
@@ -107,7 +108,7 @@ final class EntityMapperTest extends TestCase
 
     public function testBuildThrowsExceptionWithoutTable(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Table name must be set.');
 
         (new EntityMapper(TestEntity::class))
@@ -117,7 +118,7 @@ final class EntityMapperTest extends TestCase
 
     public function testBuildThrowsExceptionWithoutPrimaryKey(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Primary key must be set.');
 
         (new EntityMapper(TestEntity::class))

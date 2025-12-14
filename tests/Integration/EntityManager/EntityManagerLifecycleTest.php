@@ -6,6 +6,7 @@ namespace PureMapper\Tests\Integration\EntityManager;
 
 use PureMapper\Mapping\EntityMapper;
 use PureMapper\Tests\Integration\IntegrationTestCase;
+use Throwable;
 
 final class EntityManagerLifecycleTest extends IntegrationTestCase
 {
@@ -28,7 +29,7 @@ final class EntityManagerLifecycleTest extends IntegrationTestCase
                 ->id('id')
                 ->field('name', 'string')
                 ->field('email', 'string')
-                ->build()
+                ->build(),
         );
     }
 
@@ -92,7 +93,7 @@ final class EntityManagerLifecycleTest extends IntegrationTestCase
         try {
             $this->em->commit();
             $this->fail('Expected exception was not thrown');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Expected
         }
 

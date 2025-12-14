@@ -8,8 +8,8 @@ final class EntityNotFoundException extends PureMapperException
 {
     public static function forId(string $class, mixed $id): self
     {
-        $idString = is_array($id) ? json_encode($id) : (string) $id;
+        $idString = \is_array($id) ? json_encode($id) : (string) $id;
 
-        return new self(sprintf('Entity "%s" with ID %s not found.', $class, $idString));
+        return new self(\sprintf('Entity "%s" with ID %s not found.', $class, $idString));
     }
 }

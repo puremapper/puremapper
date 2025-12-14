@@ -30,7 +30,7 @@ final class CompositeKeyOperationsTest extends IntegrationTestCase
                 ->field('tenantId', 'int', 'tenant_id')
                 ->field('userId', 'int', 'user_id')
                 ->field('role', 'string')
-                ->build()
+                ->build(),
         );
     }
 

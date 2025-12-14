@@ -19,8 +19,7 @@ final class Hydrator
     public function __construct(
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly TypeRegistry $typeRegistry,
-    ) {
-    }
+    ) {}
 
     /**
      * Create an entity instance from a database row.
@@ -40,7 +39,7 @@ final class Hydrator
         foreach ($metadata->fields as $property => $field) {
             $column = $field->column;
 
-            if (!array_key_exists($column, $row)) {
+            if (!\array_key_exists($column, $row)) {
                 continue;
             }
 
@@ -95,7 +94,7 @@ final class Hydrator
         $metadata = $this->metadataRegistry->get($class);
         $reflection = $this->getReflection($class);
 
-        $keys = is_array($metadata->primaryKey)
+        $keys = \is_array($metadata->primaryKey)
             ? $metadata->primaryKey
             : [$metadata->primaryKey];
 
@@ -104,7 +103,7 @@ final class Hydrator
             $values[$key] = $this->getPropertyValue($entity, $reflection, $key);
         }
 
-        return count($values) === 1 ? reset($values) : $values;
+        return \count($values) === 1 ? reset($values) : $values;
     }
 
     /**

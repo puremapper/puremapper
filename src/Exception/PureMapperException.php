@@ -6,6 +6,4 @@ namespace PureMapper\Exception;
 
 use Exception;
 
-class PureMapperException extends Exception
-{
-}
+class PureMapperException extends Exception {}

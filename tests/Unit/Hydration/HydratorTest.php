@@ -52,7 +52,7 @@ final class HydratorTest extends TestCase
                 ->field('name', 'string')
                 ->field('email', 'string')
                 ->field('createdAt', 'datetime', column: 'created_at')
-                ->build()
+                ->build(),
         );
 
         $row = [
@@ -110,7 +110,7 @@ final class HydratorTest extends TestCase
                 ->field('name', 'string')
                 ->field('email', 'string')
                 ->field('createdAt', 'datetime', column: 'created_at')
-                ->build()
+                ->build(),
         );
 
         $user = new HydratorTestUser();
@@ -147,7 +147,7 @@ final class HydratorTest extends TestCase
                 ->field('tenantId', 'int', column: 'tenant_id')
                 ->field('userId', 'int', column: 'user_id')
                 ->field('role', 'string')
-                ->build()
+                ->build(),
         );
 
         $tenantUser = new HydratorTestTenantUser();
@@ -168,7 +168,7 @@ final class HydratorTest extends TestCase
                 ->id('id')
                 ->field('name', 'string')
                 ->field('email', 'string')
-                ->build()
+                ->build(),
         );
     }
 }

@@ -14,6 +14,7 @@ use PureMapper\Mapping\MetadataRegistry;
 use PureMapper\Persistence\EntityState;
 use PureMapper\Persistence\UnitOfWork;
 use PureMapper\Type\TypeRegistry;
+use RuntimeException;
 
 final class UnitOfWorkTest extends TestCase
 {
@@ -31,7 +32,7 @@ final class UnitOfWorkTest extends TestCase
                 ->id('id')
                 ->field('name', 'string')
                 ->field('email', 'string')
-                ->build()
+                ->build(),
         );
 
         $hydrator = new Hydrator($this->metadataRegistry, new TypeRegistry());
@@ -79,7 +80,7 @@ final class UnitOfWorkTest extends TestCase
         $user = new UnitOfWorkTestUser();
         $user->name = 'John';
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Entity is not managed.');
 
         $this->uow->markDirty($user);
@@ -213,7 +214,7 @@ final class UnitOfWorkTest extends TestCase
         $user->email = 'john@example.com';
 
         $queryBuilder = $this->createMock(Builder::class);
-        $queryBuilder->method('insertGetId')->willThrowException(new \RuntimeException('DB Error'));
+        $queryBuilder->method('insertGetId')->willThrowException(new RuntimeException('DB Error'));
 
         $this->connection->method('table')->willReturn($queryBuilder);
         $this->connection->expects($this->once())->method('beginTransaction');
@@ -222,7 +223,7 @@ final class UnitOfWorkTest extends TestCase
 
         $this->uow->persist($user);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(RuntimeException::class);
         $this->uow->commit();
     }
 }

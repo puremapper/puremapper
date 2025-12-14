@@ -8,7 +8,6 @@ use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use PureMapper\Exception\TypeNotFoundException;
 use PureMapper\Type\Converter\EnumConverter;
-use PureMapper\Type\TypeConverter;
 use PureMapper\Type\TypeRegistry;
 
 final class TypeRegistryTest extends TestCase

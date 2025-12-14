@@ -10,6 +10,5 @@ final readonly class FieldMetadata
         public string $property,
         public string $type,
         public string $column,
-    ) {
-    }
+    ) {}
 }

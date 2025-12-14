@@ -59,7 +59,7 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
                 ->field('name', 'string')
                 ->hasOne('profile', RelationTestProfile::class, 'user_id')
                 ->hasMany('posts', RelationTestPost::class, 'user_id')
-                ->build()
+                ->build(),
         );
 
         $this->metadataRegistry->register(
@@ -69,7 +69,7 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
                 ->field('userId', 'int', 'user_id')
                 ->field('bio', 'string')
                 ->belongsTo('user', RelationTestUser::class, 'userId')
-                ->build()
+                ->build(),
         );
 
         $this->metadataRegistry->register(
@@ -80,7 +80,7 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
                 ->field('title', 'string')
                 ->belongsTo('author', RelationTestUser::class, 'userId')
                 ->manyToMany('tags', RelationTestTag::class, 'post_tags', 'post_id', 'tag_id')
-                ->build()
+                ->build(),
         );
 
         $this->metadataRegistry->register(
@@ -88,7 +88,7 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
                 ->table('tags')
                 ->id('id')
                 ->field('name', 'string')
-                ->build()
+                ->build(),
         );
     }
 

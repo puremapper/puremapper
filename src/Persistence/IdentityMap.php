@@ -65,7 +65,7 @@ final class IdentityMap
 
     private function createKey(mixed $id): string
     {
-        if (is_array($id)) {
+        if (\is_array($id)) {
             return implode(':', array_map('strval', $id));
         }
 
