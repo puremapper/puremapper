@@ -6,6 +6,9 @@ namespace PureMapper\Mapping;
 
 final readonly class RelationMetadata
 {
+    /**
+     * @param class-string $targetEntity
+     */
     public function __construct(
         public string $property,
         public RelationType $type,

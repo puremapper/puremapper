@@ -17,7 +17,7 @@ use PureMapper\Persistence\UnitOfWork;
 final class EntityQuery
 {
     /**
-     * @var array<string, mixed>
+     * @var array<int, array{column: string, operator: string, value: mixed}>
      */
     private array $wheres = [];
 
@@ -47,6 +47,7 @@ final class EntityQuery
     }
 
     /**
+     * @param int|string|array<string, mixed> $id
      * @return T|null
      */
     public function find(int|string|array $id): ?object
@@ -56,6 +57,7 @@ final class EntityQuery
         // Check identity map first
         $existing = $this->unitOfWork->getIdentityMap()->get($this->entityClass, $id);
         if ($existing !== null) {
+            /** @var T */
             return $existing;
         }
 
@@ -201,6 +203,7 @@ final class EntityQuery
 
     /**
      * @param \Illuminate\Database\Query\Builder $query
+     * @param int|string|array<string, mixed> $id
      */
     private function applyPrimaryKeyCondition(
         \Illuminate\Database\Query\Builder $query,
@@ -231,9 +234,11 @@ final class EntityQuery
         $existing = $this->unitOfWork->getIdentityMap()->get($this->entityClass, $id);
 
         if ($existing !== null) {
+            /** @var T */
             return $existing;
         }
 
+        /** @var T $entity */
         $entity = $this->hydrator->hydrate($this->entityClass, $row);
         $this->unitOfWork->registerManaged($entity, $id);
 

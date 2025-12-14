@@ -195,7 +195,7 @@ final class UnitOfWork
             return array_filter($id, fn($v) => $v !== null && $v !== 0) === [];
         }
 
-        return $id === 0 || $id === null;
+        return $id === 0;
     }
 
     private function executeInserts(): void

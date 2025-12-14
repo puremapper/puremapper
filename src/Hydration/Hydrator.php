@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PureMapper\Hydration;
 
+use PureMapper\Exception\HydrationException;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Type\TypeRegistry;
 use ReflectionClass;
@@ -117,6 +118,7 @@ final class Hydrator
             $this->reflectionCache[$class] = new ReflectionClass($class);
         }
 
+        /** @var ReflectionClass<T> */
         return $this->reflectionCache[$class];
     }
 
