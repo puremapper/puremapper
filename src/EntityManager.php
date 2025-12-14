@@ -6,7 +6,7 @@ namespace PureMapper;
 
 use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
-use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Persistence\UnitOfWork;
 use PureMapper\Query\EntityQuery;
 use PureMapper\Type\TypeRegistry;
@@ -18,7 +18,7 @@ final class EntityManager
 
     public function __construct(
         private readonly ConnectionInterface $connection,
-        private readonly MetadataRegistry $metadataRegistry,
+        private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly TypeRegistry $typeRegistry,
     ) {
         $this->hydrator = new Hydrator($this->metadataRegistry, $this->typeRegistry);
@@ -94,7 +94,7 @@ final class EntityManager
     /**
      * Get the metadata registry.
      */
-    public function getMetadataRegistry(): MetadataRegistry
+    public function getMetadataRegistry(): MetadataRegistryInterface
     {
         return $this->metadataRegistry;
     }

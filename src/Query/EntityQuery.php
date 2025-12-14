@@ -7,7 +7,7 @@ namespace PureMapper\Query;
 use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\EntityMetadata;
-use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Mapping\RelationType;
 use PureMapper\Persistence\UnitOfWork;
 
@@ -40,7 +40,7 @@ final class EntityQuery
     public function __construct(
         private readonly string $entityClass,
         private readonly ConnectionInterface $connection,
-        private readonly MetadataRegistry $metadataRegistry,
+        private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly Hydrator $hydrator,
         private readonly UnitOfWork $unitOfWork,
     ) {

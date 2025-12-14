@@ -6,7 +6,7 @@ namespace PureMapper\Mapping;
 
 use PureMapper\Exception\MetadataNotFoundException;
 
-final class MetadataRegistry
+final class MetadataRegistry implements MetadataRegistryInterface
 {
     /**
      * @var array<class-string, EntityMetadata>
@@ -37,5 +37,13 @@ final class MetadataRegistry
     public function has(string $class): bool
     {
         return isset($this->metadata[$class]);
+    }
+
+    /**
+     * @return array<class-string, EntityMetadata>
+     */
+    public function all(): array
+    {
+        return $this->metadata;
     }
 }

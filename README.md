@@ -423,6 +423,88 @@ try {
 
 ---
 
+## Metadata Caching
+
+For production environments, PureMapper supports PSR-16 metadata caching to avoid rebuilding entity mappings on every request.
+
+### Development vs Production
+
+| Environment | Registry | Reason |
+|-------------|----------|--------|
+| Development | `MetadataRegistry` | No cache, changes apply immediately |
+| Production | `CachedMetadataRegistry` | Performance, metadata rarely changes |
+
+### Basic Setup
+
+```php
+use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Mapping\CachedMetadataRegistry;
+use Psr\SimpleCache\CacheInterface;
+
+// Development - no caching
+$registry = new MetadataRegistry();
+
+// Production - with PSR-16 cache
+/** @var CacheInterface $cache */
+$cachedRegistry = new CachedMetadataRegistry(
+    $registry,
+    $cache,
+    prefix: 'puremapper_metadata_',  // Optional: custom prefix
+    ttl: 3600,                        // Optional: TTL in seconds
+);
+```
+
+### Cache Warming
+
+For best performance, warm the cache during deployment:
+
+```php
+// Register all entity mappings
+$registry->register($userMetadata);
+$registry->register($postMetadata);
+
+// Warm cache (stores all metadata in persistent cache)
+$cachedRegistry->warm();
+```
+
+### Cache Invalidation
+
+Invalidate cache when entity mappings change (typically during deployment):
+
+```php
+// Invalidate single entity
+$cachedRegistry->invalidate(User::class);
+
+// Invalidate all cached metadata
+$cachedRegistry->invalidateAll();
+
+// Clear only runtime (in-memory) cache - useful for long-running processes
+$cachedRegistry->clearRuntimeCache();
+```
+
+### How It Works
+
+`CachedMetadataRegistry` uses two-tier caching:
+
+1. **Runtime cache** (array) - Zero overhead lookups within same request
+2. **Persistent cache** (PSR-16) - Cross-request caching (Redis, Memcached, file, etc.)
+
+Cache keys are versioned (`puremapper_metadata_v1_...`) to allow automatic invalidation when the internal structure changes.
+
+### Multi-Application Support
+
+Use custom prefixes to isolate cache entries in shared cache environments:
+
+```php
+// App 1
+$registry1 = new CachedMetadataRegistry($inner, $cache, prefix: 'app1_metadata_');
+
+// App 2
+$registry2 = new CachedMetadataRegistry($inner, $cache, prefix: 'app2_metadata_');
+```
+
+---
+
 ## Identity Map
 
 The identity map is scoped to a single UnitOfWork instance.
@@ -546,9 +628,15 @@ PureMapper is intentionally minimal. Do not use it if you need:
 
 ## Roadmap
 
+### Completed
+
+* [x] Metadata Caching (PSR-16 support with `CachedMetadataRegistry`)
+
+### Planned
+
+* [ ] Event dispatching (prePersist, postPersist, preUpdate, postUpdate, preRemove, postRemove, postLoad)
 * [ ] Embedded/Value Objects (e.g., Money, Address mapping to multiple columns)
-* [ ] Typed metadata (Enum-based field types)
-* [ ] Event dispatching (prePersist, postPersist, etc.)
+* [ ] Soft Deletes (automatic `deleted_at` filtering)
 
 ---
 

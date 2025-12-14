@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PureMapper\Hydration;
 
-use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Type\TypeRegistry;
 use ReflectionClass;
 
@@ -16,7 +16,7 @@ final class Hydrator
     private array $reflectionCache = [];
 
     public function __construct(
-        private readonly MetadataRegistry $metadataRegistry,
+        private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly TypeRegistry $typeRegistry,
     ) {
     }

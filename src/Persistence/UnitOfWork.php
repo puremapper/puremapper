@@ -6,7 +6,7 @@ namespace PureMapper\Persistence;
 
 use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
-use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Mapping\MetadataRegistryInterface;
 use SplObjectStorage;
 
 final class UnitOfWork
@@ -37,7 +37,7 @@ final class UnitOfWork
 
     public function __construct(
         private readonly ConnectionInterface $connection,
-        private readonly MetadataRegistry $metadataRegistry,
+        private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly Hydrator $hydrator,
     ) {
         $this->identityMap = new IdentityMap();
