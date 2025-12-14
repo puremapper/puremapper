@@ -11,6 +11,7 @@ $finder = PhpCsFixer\Finder::create()
 
 return (new PhpCsFixer\Config())
     ->setRiskyAllowed(true)
+    ->setUnsupportedPhpVersionAllowed(true)
     ->setRules([
         '@PER-CS2.0' => true,
         '@PER-CS2.0:risky' => true,
