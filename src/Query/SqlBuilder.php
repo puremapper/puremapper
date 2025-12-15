@@ -86,6 +86,30 @@ final class SqlBuilder
         return $this;
     }
 
+    public function whereNull(string $column): self
+    {
+        $this->wheres[] = [
+            'type' => 'and',
+            'column' => $column,
+            'operator' => 'IS NULL',
+            'value' => null,
+        ];
+
+        return $this;
+    }
+
+    public function whereNotNull(string $column): self
+    {
+        $this->wheres[] = [
+            'type' => 'and',
+            'column' => $column,
+            'operator' => 'IS NOT NULL',
+            'value' => null,
+        ];
+
+        return $this;
+    }
+
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
         $this->orderBys[] = [
@@ -270,6 +294,8 @@ final class SqlBuilder
                 foreach ($values as $val) {
                     $params[] = $val;
                 }
+            } elseif ($where['operator'] === 'IS NULL' || $where['operator'] === 'IS NOT NULL') {
+                $clauses[] = $prefix . $column . ' ' . $where['operator'];
             } else {
                 $clauses[] = $prefix . $column . ' ' . $where['operator'] . ' ?';
                 $params[] = $where['value'];

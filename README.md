@@ -451,6 +451,8 @@ $affected = $connection->execute($query);
 | `where(column, operator, value)` | Add AND WHERE condition |
 | `orWhere(column, operator, value)` | Add OR WHERE condition |
 | `whereIn(column, array)` | Add WHERE IN condition |
+| `whereNull(column)` | Add WHERE column IS NULL condition |
+| `whereNotNull(column)` | Add WHERE column IS NOT NULL condition |
 | `orderBy(column, direction)` | Add ORDER BY clause |
 | `limit(int)` | Set LIMIT |
 | `offset(int)` | Set OFFSET |

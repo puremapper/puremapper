@@ -107,6 +107,53 @@ final class SqlBuilderTest extends TestCase
     }
 
     #[Test]
+    public function selectWithWhereNull(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->whereNull('deleted_at')
+            ->toSelect();
+
+        $this->assertSame('SELECT * FROM `users` WHERE `deleted_at` IS NULL', $query->sql);
+        $this->assertSame([], $query->params);
+    }
+
+    #[Test]
+    public function selectWithWhereNotNull(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->whereNotNull('email')
+            ->toSelect();
+
+        $this->assertSame('SELECT * FROM `users` WHERE `email` IS NOT NULL', $query->sql);
+        $this->assertSame([], $query->params);
+    }
+
+    #[Test]
+    public function selectWithNullConditionsCombined(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where('status', '=', 'active')
+            ->whereNull('deleted_at')
+            ->whereNotNull('verified_at')
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE `status` = ? AND `deleted_at` IS NULL AND `verified_at` IS NOT NULL',
+            $query->sql,
+        );
+        $this->assertSame(['active'], $query->params);
+    }
+
+    #[Test]
     public function selectWithOrderBy(): void
     {
         $builder = new SqlBuilder(DatabaseDriver::MySQL);
