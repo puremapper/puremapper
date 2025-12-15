@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace PureMapper;
 
-use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Persistence\UnitOfWork;
+use PureMapper\Query\Connection;
 use PureMapper\Query\EntityQuery;
 use PureMapper\Type\TypeRegistry;
 
@@ -17,7 +17,7 @@ final class EntityManager
     private readonly UnitOfWork $unitOfWork;
 
     public function __construct(
-        private readonly ConnectionInterface $connection,
+        private readonly Connection $connection,
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly TypeRegistry $typeRegistry,
     ) {
@@ -118,7 +118,7 @@ final class EntityManager
     /**
      * Get the database connection.
      */
-    public function getConnection(): ConnectionInterface
+    public function getConnection(): Connection
     {
         return $this->connection;
     }

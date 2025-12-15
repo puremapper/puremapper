@@ -82,7 +82,7 @@ final class EntityManagerLifecycleTest extends IntegrationTestCase
         $this->em->persist($user);
         $this->em->commit();
 
-        $initialCount = $this->connection->table('users')->count();
+        $initialCount = $this->getTableCount('users');
 
         // Force an error by inserting a user with null name (NOT NULL constraint)
         $badUser = new LifecycleTestUser();
@@ -98,7 +98,16 @@ final class EntityManagerLifecycleTest extends IntegrationTestCase
         }
 
         // Verify count unchanged (rollback worked)
-        $this->assertSame($initialCount, $this->connection->table('users')->count());
+        $this->assertSame($initialCount, $this->getTableCount('users'));
+    }
+
+    private function getTableCount(string $table): int
+    {
+        $rows = $this->connection->select(
+            new \PureMapper\Query\CompiledQuery("SELECT COUNT(*) as cnt FROM \"{$table}\"", []),
+        );
+
+        return (int) $rows[0]['cnt'];
     }
 
     public function testIdentityMapReturnsExistingInstance(): void

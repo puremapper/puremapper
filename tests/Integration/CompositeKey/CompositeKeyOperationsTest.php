@@ -37,11 +37,13 @@ final class CompositeKeyOperationsTest extends IntegrationTestCase
     public function testCompositeKeyCrudOperations(): void
     {
         // Create (insert directly since composite keys must have user-provided values)
-        $this->connection->table('tenant_users')->insert([
-            'tenant_id' => 1,
-            'user_id' => 42,
-            'role' => 'admin',
-        ]);
+        $this->connection->execute(
+            $this->connection->table('tenant_users')->toInsert([
+                'tenant_id' => 1,
+                'user_id' => 42,
+                'role' => 'admin',
+            ]),
+        );
 
         // Read with composite key
         $fetched = $this->em->query(TenantUser::class)->find(['tenantId' => 1, 'userId' => 42]);
@@ -72,11 +74,13 @@ final class CompositeKeyOperationsTest extends IntegrationTestCase
     public function testCompositeKeyIdentityMap(): void
     {
         // Insert directly
-        $this->connection->table('tenant_users')->insert([
-            'tenant_id' => 2,
-            'user_id' => 100,
-            'role' => 'member',
-        ]);
+        $this->connection->execute(
+            $this->connection->table('tenant_users')->toInsert([
+                'tenant_id' => 2,
+                'user_id' => 100,
+                'role' => 'member',
+            ]),
+        );
 
         // Query twice without clearing
         $first = $this->em->query(TenantUser::class)->find(['tenantId' => 2, 'userId' => 100]);

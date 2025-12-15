@@ -4,29 +4,26 @@ declare(strict_types=1);
 
 namespace PureMapper\Tests\Integration;
 
-use Illuminate\Database\Capsule\Manager as Capsule;
-use Illuminate\Database\ConnectionInterface;
+use PDO;
 use PHPUnit\Framework\TestCase;
 use PureMapper\EntityManager;
 use PureMapper\Mapping\MetadataRegistry;
+use PureMapper\Query\Connection;
+use PureMapper\Query\DatabaseDriver;
 use PureMapper\Type\TypeRegistry;
 
 abstract class IntegrationTestCase extends TestCase
 {
-    protected ConnectionInterface $connection;
+    protected Connection $connection;
     protected MetadataRegistry $metadataRegistry;
     protected TypeRegistry $typeRegistry;
     protected EntityManager $em;
 
     protected function setUp(): void
     {
-        $capsule = new Capsule();
-        $capsule->addConnection([
-            'driver' => 'sqlite',
-            'database' => ':memory:',
-        ]);
+        $pdo = new PDO('sqlite::memory:');
 
-        $this->connection = $capsule->getConnection();
+        $this->connection = new Connection($pdo, DatabaseDriver::SQLite);
         $this->metadataRegistry = new MetadataRegistry();
         $this->typeRegistry = new TypeRegistry();
 

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace PureMapper\Persistence;
 
-use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\MetadataRegistryInterface;
+use PureMapper\Query\Connection;
 use ReflectionProperty;
 use RuntimeException;
 use SplObjectStorage;
@@ -39,7 +39,7 @@ final class UnitOfWork
     private bool $autoTransaction = true;
 
     public function __construct(
-        private readonly ConnectionInterface $connection,
+        private readonly Connection $connection,
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly Hydrator $hydrator,
     ) {
@@ -220,18 +220,20 @@ final class UnitOfWork
                 }
             }
 
+            $query = $this->connection->table($metadata->table)->toInsert($data);
+
             // Get last insert ID for single auto-increment keys
             if (!\is_array($metadata->primaryKey)) {
                 $column = $metadata->fields[$metadata->primaryKey]->column ?? $metadata->primaryKey;
                 if (!isset($data[$column])) {
-                    $id = $this->connection->table($metadata->table)->insertGetId($data);
+                    $id = $this->connection->insert($query);
                     $reflection = new ReflectionProperty($entity, $metadata->primaryKey);
                     $reflection->setValue($entity, (int) $id);
                 } else {
-                    $this->connection->table($metadata->table)->insert($data);
+                    $this->connection->execute($query);
                 }
             } else {
-                $this->connection->table($metadata->table)->insert($data);
+                $this->connection->execute($query);
             }
         }
     }
@@ -249,18 +251,19 @@ final class UnitOfWork
                 ? $metadata->primaryKey
                 : [$metadata->primaryKey];
 
-            $query = $this->connection->table($metadata->table);
+            $builder = $this->connection->table($metadata->table);
 
             foreach ($pk as $key) {
                 $column = $metadata->fields[$key]->column ?? $key;
                 $value = \is_array($id) ? $id[$key] : $id;
-                $query->where($column, '=', $value);
+                $builder->where($column, '=', $value);
 
                 // Remove PK from update data
                 unset($data[$column]);
             }
 
-            $query->update($data);
+            $query = $builder->toUpdate($data);
+            $this->connection->execute($query);
         }
     }
 
@@ -275,15 +278,16 @@ final class UnitOfWork
                 ? $metadata->primaryKey
                 : [$metadata->primaryKey];
 
-            $query = $this->connection->table($metadata->table);
+            $builder = $this->connection->table($metadata->table);
 
             foreach ($pk as $key) {
                 $column = $metadata->fields[$key]->column ?? $key;
                 $value = \is_array($id) ? $id[$key] : $id;
-                $query->where($column, '=', $value);
+                $builder->where($column, '=', $value);
             }
 
-            $query->delete();
+            $query = $builder->toDelete();
+            $this->connection->execute($query);
         }
     }
 

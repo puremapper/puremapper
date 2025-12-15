@@ -95,8 +95,12 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
     public function testHasOneEagerLoading(): void
     {
         // Insert data
-        $userId = $this->connection->table('users')->insertGetId(['name' => 'John']);
-        $this->connection->table('profiles')->insert(['user_id' => $userId, 'bio' => 'Developer']);
+        $userId = $this->connection->insert(
+            $this->connection->table('users')->toInsert(['name' => 'John']),
+        );
+        $this->connection->execute(
+            $this->connection->table('profiles')->toInsert(['user_id' => $userId, 'bio' => 'Developer']),
+        );
 
         // Query with eager loading (use where + first since find() doesn't load relations)
         $user = $this->em->query(RelationTestUser::class)
@@ -112,10 +116,18 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
     public function testHasManyEagerLoading(): void
     {
         // Insert data
-        $userId = $this->connection->table('users')->insertGetId(['name' => 'John']);
-        $this->connection->table('posts')->insert(['user_id' => $userId, 'title' => 'Post 1']);
-        $this->connection->table('posts')->insert(['user_id' => $userId, 'title' => 'Post 2']);
-        $this->connection->table('posts')->insert(['user_id' => $userId, 'title' => 'Post 3']);
+        $userId = $this->connection->insert(
+            $this->connection->table('users')->toInsert(['name' => 'John']),
+        );
+        $this->connection->execute(
+            $this->connection->table('posts')->toInsert(['user_id' => $userId, 'title' => 'Post 1']),
+        );
+        $this->connection->execute(
+            $this->connection->table('posts')->toInsert(['user_id' => $userId, 'title' => 'Post 2']),
+        );
+        $this->connection->execute(
+            $this->connection->table('posts')->toInsert(['user_id' => $userId, 'title' => 'Post 3']),
+        );
 
         // Query with eager loading
         $user = $this->em->query(RelationTestUser::class)
@@ -130,8 +142,12 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
     public function testBelongsToEagerLoading(): void
     {
         // Insert data
-        $userId = $this->connection->table('users')->insertGetId(['name' => 'John']);
-        $postId = $this->connection->table('posts')->insertGetId(['user_id' => $userId, 'title' => 'My Post']);
+        $userId = $this->connection->insert(
+            $this->connection->table('users')->toInsert(['name' => 'John']),
+        );
+        $postId = $this->connection->insert(
+            $this->connection->table('posts')->toInsert(['user_id' => $userId, 'title' => 'My Post']),
+        );
 
         // Query with eager loading
         $this->em->clear();
@@ -148,14 +164,26 @@ final class RelationEagerLoadingTest extends IntegrationTestCase
     public function testManyToManyEagerLoading(): void
     {
         // Insert data
-        $userId = $this->connection->table('users')->insertGetId(['name' => 'John']);
-        $postId = $this->connection->table('posts')->insertGetId(['user_id' => $userId, 'title' => 'Tagged Post']);
+        $userId = $this->connection->insert(
+            $this->connection->table('users')->toInsert(['name' => 'John']),
+        );
+        $postId = $this->connection->insert(
+            $this->connection->table('posts')->toInsert(['user_id' => $userId, 'title' => 'Tagged Post']),
+        );
 
-        $tagId1 = $this->connection->table('tags')->insertGetId(['name' => 'PHP']);
-        $tagId2 = $this->connection->table('tags')->insertGetId(['name' => 'ORM']);
+        $tagId1 = $this->connection->insert(
+            $this->connection->table('tags')->toInsert(['name' => 'PHP']),
+        );
+        $tagId2 = $this->connection->insert(
+            $this->connection->table('tags')->toInsert(['name' => 'ORM']),
+        );
 
-        $this->connection->table('post_tags')->insert(['post_id' => $postId, 'tag_id' => $tagId1]);
-        $this->connection->table('post_tags')->insert(['post_id' => $postId, 'tag_id' => $tagId2]);
+        $this->connection->execute(
+            $this->connection->table('post_tags')->toInsert(['post_id' => $postId, 'tag_id' => $tagId1]),
+        );
+        $this->connection->execute(
+            $this->connection->table('post_tags')->toInsert(['post_id' => $postId, 'tag_id' => $tagId2]),
+        );
 
         // Query with eager loading
         $post = $this->em->query(RelationTestPost::class)

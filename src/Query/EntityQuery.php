@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace PureMapper\Query;
 
-use Illuminate\Database\ConnectionInterface;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\EntityMetadata;
 use PureMapper\Mapping\MetadataRegistryInterface;
@@ -40,7 +39,7 @@ final class EntityQuery
      */
     public function __construct(
         private readonly string $entityClass,
-        private readonly ConnectionInterface $connection,
+        private readonly Connection $connection,
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly Hydrator $hydrator,
         private readonly UnitOfWork $unitOfWork,
@@ -61,17 +60,17 @@ final class EntityQuery
             return $existing;
         }
 
-        $query = $this->connection->table($metadata->table);
+        $builder = $this->connection->table($metadata->table);
+        $this->applyPrimaryKeyCondition($builder, $metadata, $id);
 
-        $this->applyPrimaryKeyCondition($query, $metadata, $id);
+        $query = $builder->toSelect();
+        $rows = $this->connection->select($query);
 
-        $row = $query->first();
-
-        if ($row === null) {
+        if (empty($rows)) {
             return null;
         }
 
-        return $this->hydrateAndRegister((array) $row, $metadata);
+        return $this->hydrateAndRegister($rows[0], $metadata);
     }
 
     /**
@@ -80,15 +79,16 @@ final class EntityQuery
     public function first(): ?object
     {
         $metadata = $this->metadataRegistry->get($this->entityClass);
-        $query = $this->buildQuery($metadata);
+        $builder = $this->buildQuery($metadata);
 
-        $row = $query->first();
+        $query = $builder->limit(1)->toSelect();
+        $rows = $this->connection->select($query);
 
-        if ($row === null) {
+        if (empty($rows)) {
             return null;
         }
 
-        $entity = $this->hydrateAndRegister((array) $row, $metadata);
+        $entity = $this->hydrateAndRegister($rows[0], $metadata);
         $this->loadRelations([$entity], $metadata);
 
         return $entity;
@@ -100,13 +100,14 @@ final class EntityQuery
     public function get(): array
     {
         $metadata = $this->metadataRegistry->get($this->entityClass);
-        $query = $this->buildQuery($metadata);
+        $builder = $this->buildQuery($metadata);
 
-        $rows = $query->get();
+        $query = $builder->toSelect();
+        $rows = $this->connection->select($query);
         $entities = [];
 
         foreach ($rows as $row) {
-            $entities[] = $this->hydrateAndRegister((array) $row, $metadata);
+            $entities[] = $this->hydrateAndRegister($row, $metadata);
         }
 
         $this->loadRelations($entities, $metadata);
@@ -173,40 +174,36 @@ final class EntityQuery
         return $this;
     }
 
-    /**
-     * @return \Illuminate\Database\Query\Builder
-     */
-    private function buildQuery(EntityMetadata $metadata): \Illuminate\Database\Query\Builder
+    private function buildQuery(EntityMetadata $metadata): SqlBuilder
     {
-        $query = $this->connection->table($metadata->table);
+        $builder = $this->connection->table($metadata->table);
 
         foreach ($this->wheres as $where) {
             $column = $metadata->getColumnForProperty($where['column']) ?? $where['column'];
-            $query->where($column, $where['operator'], $where['value']);
+            $builder->where($column, $where['operator'], $where['value']);
         }
 
         foreach ($this->orderBys as $orderBy) {
             $column = $metadata->getColumnForProperty($orderBy['column']) ?? $orderBy['column'];
-            $query->orderBy($column, $orderBy['direction']);
+            $builder->orderBy($column, $orderBy['direction']);
         }
 
         if ($this->limitValue !== null) {
-            $query->limit($this->limitValue);
+            $builder->limit($this->limitValue);
         }
 
         if ($this->offsetValue !== null) {
-            $query->offset($this->offsetValue);
+            $builder->offset($this->offsetValue);
         }
 
-        return $query;
+        return $builder;
     }
 
     /**
-     * @param \Illuminate\Database\Query\Builder $query
      * @param int|string|array<string, mixed> $id
      */
     private function applyPrimaryKeyCondition(
-        \Illuminate\Database\Query\Builder $query,
+        SqlBuilder $builder,
         EntityMetadata $metadata,
         int|string|array $id,
     ): void {
@@ -219,7 +216,7 @@ final class EntityQuery
         foreach ($keys as $i => $key) {
             $column = $metadata->fields[$key]->column ?? $key;
             $value = \is_array($id) ? ($id[$key] ?? $values[$i] ?? null) : $id;
-            $query->where($column, '=', $value);
+            $builder->where($column, '=', $value);
         }
     }
 
@@ -316,14 +313,14 @@ final class EntityQuery
         }
 
         // Load related entities
-        $rows = $this->connection->table($targetMetadata->table)
+        $query = $this->connection->table($targetMetadata->table)
             ->whereIn($foreignKey, $parentIds)
-            ->get();
+            ->toSelect();
+        $rows = $this->connection->select($query);
 
         // Index by foreign key
         $relatedByFk = [];
         foreach ($rows as $row) {
-            $row = (array) $row;
             $fkValue = $row[$foreignKey] ?? null;
             if ($fkValue !== null) {
                 $relatedByFk[$fkValue] = $this->hydrator->hydrate($relation->targetEntity, $row);
@@ -362,14 +359,14 @@ final class EntityQuery
         }
 
         // Load related entities
-        $rows = $this->connection->table($targetMetadata->table)
+        $query = $this->connection->table($targetMetadata->table)
             ->whereIn($foreignKey, $parentIds)
-            ->get();
+            ->toSelect();
+        $rows = $this->connection->select($query);
 
         // Group by foreign key
         $relatedByFk = [];
         foreach ($rows as $row) {
-            $row = (array) $row;
             $fkValue = $row[$foreignKey] ?? null;
             if ($fkValue !== null) {
                 $relatedByFk[$fkValue][] = $this->hydrator->hydrate($relation->targetEntity, $row);
@@ -415,14 +412,14 @@ final class EntityQuery
         }
 
         // Load related entities
-        $rows = $this->connection->table($targetMetadata->table)
+        $query = $this->connection->table($targetMetadata->table)
             ->whereIn($targetPkColumn, array_unique($fkValues))
-            ->get();
+            ->toSelect();
+        $rows = $this->connection->select($query);
 
         // Index by PK
         $relatedByPk = [];
         foreach ($rows as $row) {
-            $row = (array) $row;
             $pkValue = $row[$targetPkColumn] ?? null;
             if ($pkValue !== null) {
                 $relatedByPk[$pkValue] = $this->hydrator->hydrate($relation->targetEntity, $row);
@@ -472,15 +469,15 @@ final class EntityQuery
         }
 
         // Load pivot table entries
-        $pivotRows = $this->connection->table($pivotTable)
+        $pivotQuery = $this->connection->table($pivotTable)
             ->whereIn($foreignKey, $parentIds)
-            ->get();
+            ->toSelect();
+        $pivotRows = $this->connection->select($pivotQuery);
 
         // Collect related IDs
         $relatedIds = [];
         $pivotMap = [];
         foreach ($pivotRows as $row) {
-            $row = (array) $row;
             $parentId = $row[$foreignKey] ?? null;
             $relatedId = $row[$relatedKey] ?? null;
             if ($parentId !== null && $relatedId !== null) {
@@ -494,14 +491,14 @@ final class EntityQuery
         }
 
         // Load related entities
-        $rows = $this->connection->table($targetMetadata->table)
+        $query = $this->connection->table($targetMetadata->table)
             ->whereIn($targetPkColumn, array_unique($relatedIds))
-            ->get();
+            ->toSelect();
+        $rows = $this->connection->select($query);
 
         // Index by PK
         $relatedByPk = [];
         foreach ($rows as $row) {
-            $row = (array) $row;
             $pkValue = $row[$targetPkColumn] ?? null;
             if ($pkValue !== null) {
                 $relatedByPk[$pkValue] = $this->hydrator->hydrate($relation->targetEntity, $row);
@@ -523,5 +520,4 @@ final class EntityQuery
             $reflection->setValue($entity, $relatedEntities);
         }
     }
-
 }

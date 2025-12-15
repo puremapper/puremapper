@@ -37,13 +37,19 @@ final class QueryBuilderIntegrationTest extends IntegrationTestCase
         parent::setUp();
 
         // Seed test data
-        $this->connection->table('products')->insert([
+        $products = [
             ['name' => 'Apple', 'price' => 100],
             ['name' => 'Banana', 'price' => 50],
             ['name' => 'Cherry', 'price' => 200],
             ['name' => 'Date', 'price' => 150],
             ['name' => 'Elderberry', 'price' => 300],
-        ]);
+        ];
+
+        foreach ($products as $product) {
+            $this->connection->execute(
+                $this->connection->table('products')->toInsert($product),
+            );
+        }
     }
 
     public function testWhereAndOrderBy(): void
