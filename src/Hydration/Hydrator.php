@@ -8,6 +8,7 @@ use PureMapper\Exception\HydrationException;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Type\TypeRegistry;
 use ReflectionClass;
+use ReflectionProperty;
 
 final class Hydrator
 {
@@ -15,6 +16,11 @@ final class Hydrator
      * @var array<class-string, ReflectionClass<object>>
      */
     private array $reflectionCache = [];
+
+    /**
+     * @var array<class-string, array<string, ReflectionProperty>>
+     */
+    private array $propertyCache = [];
 
     public function __construct(
         private readonly MetadataRegistryInterface $metadataRegistry,
@@ -50,7 +56,7 @@ final class Hydrator
                 $value = $converter->toPHP($value);
             }
 
-            $this->setPropertyValue($entity, $reflection, $property, $value);
+            $this->setPropertyValue($entity, $class, $property, $value);
         }
 
         return $entity;
@@ -66,11 +72,10 @@ final class Hydrator
     {
         $class = $entity::class;
         $metadata = $this->metadataRegistry->get($class);
-        $reflection = $this->getReflection($class);
         $data = [];
 
         foreach ($metadata->fields as $property => $field) {
-            $value = $this->getPropertyValue($entity, $reflection, $property);
+            $value = $this->getPropertyValue($entity, $class, $property);
 
             if ($value !== null && $this->typeRegistry->has($field->type)) {
                 $converter = $this->typeRegistry->get($field->type);
@@ -92,7 +97,6 @@ final class Hydrator
     {
         $class = $entity::class;
         $metadata = $this->metadataRegistry->get($class);
-        $reflection = $this->getReflection($class);
 
         $keys = \is_array($metadata->primaryKey)
             ? $metadata->primaryKey
@@ -100,7 +104,7 @@ final class Hydrator
 
         $values = [];
         foreach ($keys as $key) {
-            $values[$key] = $this->getPropertyValue($entity, $reflection, $key);
+            $values[$key] = $this->getPropertyValue($entity, $class, $key);
         }
 
         return \count($values) === 1 ? reset($values) : $values;
@@ -122,35 +126,56 @@ final class Hydrator
     }
 
     /**
-     * @param ReflectionClass<object> $reflection
+     * Get a cached ReflectionProperty instance.
+     *
+     * @param class-string $class
+     */
+    private function getProperty(string $class, string $property): ?ReflectionProperty
+    {
+        if (!isset($this->propertyCache[$class][$property])) {
+            $reflection = $this->getReflection($class);
+
+            if (!$reflection->hasProperty($property)) {
+                return null;
+            }
+
+            $this->propertyCache[$class][$property] = $reflection->getProperty($property);
+        }
+
+        return $this->propertyCache[$class][$property];
+    }
+
+    /**
+     * @param class-string $class
      */
     private function setPropertyValue(
         object $entity,
-        ReflectionClass $reflection,
+        string $class,
         string $property,
         mixed $value,
     ): void {
-        if (!$reflection->hasProperty($property)) {
+        $prop = $this->getProperty($class, $property);
+
+        if ($prop === null) {
             return;
         }
 
-        $prop = $reflection->getProperty($property);
         $prop->setValue($entity, $value);
     }
 
     /**
-     * @param ReflectionClass<object> $reflection
+     * @param class-string $class
      */
     private function getPropertyValue(
         object $entity,
-        ReflectionClass $reflection,
+        string $class,
         string $property,
     ): mixed {
-        if (!$reflection->hasProperty($property)) {
+        $prop = $this->getProperty($class, $property);
+
+        if ($prop === null) {
             return null;
         }
-
-        $prop = $reflection->getProperty($property);
 
         if (!$prop->isInitialized($entity)) {
             return null;
