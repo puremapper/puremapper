@@ -8,7 +8,7 @@ It is designed for developers who want:
 * No Active Record, no magic methods
 * Clear separation between **domain** and **infrastructure**
 * A small, understandable alternative to heavy ORMs
-* Battle-tested SQL execution via **Laravel Query Builder**
+* **Zero external dependencies** - only PHP core + PDO
 
 > *Doctrine ideas, without Doctrine weight.*
 
@@ -20,11 +20,13 @@ It is designed for developers who want:
 - [Philosophy](#philosophy)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Database Connection](#database-connection)
 - [Defining Entities](#defining-entities)
 - [Mapping with Fluent DSL](#mapping-with-fluent-dsl)
 - [Type Conversion](#type-conversion)
 - [Relations](#relations)
 - [Query Builder](#query-builder)
+- [SQL Builder](#sql-builder)
 - [Unit of Work](#unit-of-work)
 - [Metadata Caching](#metadata-caching)
 - [Identity Map](#identity-map)
@@ -32,6 +34,7 @@ It is designed for developers who want:
 - [Advanced Usage](#advanced-usage)
 - [Why PureMapper?](#why-puremapper)
 - [When NOT to Use PureMapper](#when-not-to-use-puremapper)
+- [Upgrading](#upgrading)
 - [Roadmap](#roadmap)
 - [License](#license)
 
@@ -40,20 +43,12 @@ It is designed for developers who want:
 ## Quick Start
 
 ```php
-// 1. Set up database connection (illuminate/database)
-use Illuminate\Database\Capsule\Manager as Capsule;
+// 1. Set up database connection (pure PDO)
+use PureMapper\Query\Connection;
+use PureMapper\Query\DatabaseDriver;
 
-$capsule = new Capsule();
-$capsule->addConnection([
-    'driver'    => 'mysql',
-    'host'      => 'localhost',
-    'database'  => 'myapp',
-    'username'  => 'root',
-    'password'  => '',
-    'charset'   => 'utf8mb4',
-    'collation' => 'utf8mb4_unicode_ci',
-]);
-$connection = $capsule->getConnection();
+$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'root', '');
+$connection = new Connection($pdo, DatabaseDriver::MySQL);
 
 // 2. Define a pure entity
 final class User
@@ -111,8 +106,8 @@ $user->name = 'John';
 $user->email = 'john@example.com';
 $user->createdAt = new DateTimeImmutable();
 
-$uow->persist($user);
-$uow->commit(); // INSERT executed, $user->id populated
+$em->persist($user);
+$em->commit(); // INSERT executed, $user->id populated
 ```
 
 ---
@@ -135,7 +130,7 @@ Domain (Pure PHP Entities)
          |
   EntityQuery + UnitOfWork + Hydrator
          |
-   Query Builder (Illuminate Database)
+   SqlBuilder + Connection (PDO)
          |
       Database
 ```
@@ -145,10 +140,9 @@ Domain (Pure PHP Entities)
 ## Requirements
 
 * PHP **8.1+**
-* `illuminate/database` ^10 || ^11 || ^12
+* PDO extension (`ext-pdo`)
 
-> PureMapper does **NOT** depend on Laravel as a framework.
-> Only the database component is used as a SQL execution layer.
+> PureMapper has **zero external dependencies**. Only PHP core and PDO are required.
 
 ---
 
@@ -157,6 +151,60 @@ Domain (Pure PHP Entities)
 ```bash
 composer require puremapper/puremapper
 ```
+
+---
+
+## Database Connection
+
+PureMapper uses PDO directly with a thin wrapper for database abstraction.
+
+### Supported Databases
+
+| Database   | Driver Enum              | Identifier Quote |
+|------------|--------------------------|------------------|
+| MySQL      | `DatabaseDriver::MySQL`  | Backtick (`)     |
+| PostgreSQL | `DatabaseDriver::PostgreSQL` | Double quote (") |
+| SQLite     | `DatabaseDriver::SQLite` | Double quote (") |
+
+### Connection Setup
+
+```php
+use PDO;
+use PureMapper\Query\Connection;
+use PureMapper\Query\DatabaseDriver;
+
+// MySQL
+$pdo = new PDO('mysql:host=localhost;dbname=myapp', 'user', 'password', [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+]);
+$connection = new Connection($pdo, DatabaseDriver::MySQL);
+
+// PostgreSQL
+$pdo = new PDO('pgsql:host=localhost;dbname=myapp', 'user', 'password');
+$connection = new Connection($pdo, DatabaseDriver::PostgreSQL);
+
+// SQLite
+$pdo = new PDO('sqlite:/path/to/database.db');
+$connection = new Connection($pdo, DatabaseDriver::SQLite);
+
+// SQLite in-memory (for testing)
+$pdo = new PDO('sqlite::memory:');
+$connection = new Connection($pdo, DatabaseDriver::SQLite);
+```
+
+### Connection Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `select(CompiledQuery)` | `array` | Execute SELECT, return rows as assoc arrays |
+| `execute(CompiledQuery)` | `int` | Execute INSERT/UPDATE/DELETE, return affected rows |
+| `insert(CompiledQuery)` | `string` | Execute INSERT, return last insert ID |
+| `table(string)` | `SqlBuilder` | Create query builder for table |
+| `beginTransaction()` | `void` | Start transaction |
+| `commit()` | `void` | Commit transaction |
+| `rollBack()` | `void` | Rollback transaction |
+| `getPdo()` | `PDO` | Get underlying PDO instance |
+| `statement(string)` | `bool` | Execute raw SQL (DDL) |
 
 ---
 
@@ -295,8 +343,6 @@ PureMapper provides a fluent Query Builder for querying entities with eager-load
 ### Basic Queries
 
 ```php
-use PureMapper\Query\EntityQuery;
-
 // Get all users
 $users = $em->query(User::class)->get();
 
@@ -329,14 +375,8 @@ $user = $em->query(User::class)
 
 // Load multiple relations
 $users = $em->query(User::class)
-    ->with('posts')
-    ->with('profile')
-    ->where('status', '=', 'active')
-    ->get();
-
-// Multiple relations in one call
-$users = $em->query(User::class)
     ->with('posts', 'profile', 'roles')
+    ->where('status', '=', 'active')
     ->get();
 ```
 
@@ -355,41 +395,83 @@ $users = $em->query(User::class)
 // 2. SELECT * FROM posts WHERE user_id IN (1, 2, 3, ...)
 ```
 
-This approach:
-- Avoids duplicate parent rows from JOINs
-- Maintains predictable memory usage
-- Works efficiently with the identity map
+---
 
-> **Note:** PureMapper does not support constrained or nested eager loading.
-> Complex relation queries should be expressed explicitly using repositories and the Query Builder.
+## SQL Builder
 
-### Query Builder in Repositories
+PureMapper includes a minimal SQL Builder for direct database operations.
 
-You can use the Query Builder inside repositories for complex queries:
+### Basic Usage
 
 ```php
-final class UserRepository implements RepositoryInterface
+// SELECT
+$query = $connection
+    ->table('users')
+    ->select('id', 'name', 'email')
+    ->where('status', '=', 'active')
+    ->whereIn('role', ['admin', 'editor'])
+    ->orderBy('created_at', 'DESC')
+    ->limit(10)
+    ->toSelect();
+
+$rows = $connection->select($query);
+// $query->sql = 'SELECT "id", "name", "email" FROM "users" WHERE "status" = ? AND "role" IN (?, ?) ORDER BY "created_at" DESC LIMIT 10'
+// $query->params = ['active', 'admin', 'editor']
+
+// INSERT
+$query = $connection
+    ->table('users')
+    ->toInsert(['name' => 'John', 'email' => 'john@example.com']);
+
+$lastId = $connection->insert($query);
+
+// UPDATE
+$query = $connection
+    ->table('users')
+    ->where('id', '=', 1)
+    ->toUpdate(['name' => 'Jane']);
+
+$affected = $connection->execute($query);
+
+// DELETE
+$query = $connection
+    ->table('users')
+    ->where('id', '=', 1)
+    ->toDelete();
+
+$affected = $connection->execute($query);
+```
+
+### SqlBuilder Methods
+
+| Method | Description |
+|--------|-------------|
+| `table(string)` | Set table name |
+| `select(string...)` | Set columns to select (default: `*`) |
+| `where(column, operator, value)` | Add AND WHERE condition |
+| `orWhere(column, operator, value)` | Add OR WHERE condition |
+| `whereIn(column, array)` | Add WHERE IN condition |
+| `orderBy(column, direction)` | Add ORDER BY clause |
+| `limit(int)` | Set LIMIT |
+| `offset(int)` | Set OFFSET |
+| `join(table, first, operator, second)` | Add INNER JOIN |
+| `leftJoin(table, first, operator, second)` | Add LEFT JOIN |
+| `toSelect()` | Compile SELECT query |
+| `toInsert(array)` | Compile INSERT query |
+| `toUpdate(array)` | Compile UPDATE query |
+| `toDelete()` | Compile DELETE query |
+
+### CompiledQuery
+
+All compile methods return a `CompiledQuery` object:
+
+```php
+final readonly class CompiledQuery
 {
     public function __construct(
-        private EntityManager $em,
+        public string $sql,    // SQL with placeholders
+        public array $params,  // Bound parameters
     ) {}
-
-    public function findActiveWithPosts(): array
-    {
-        return $this->em->query(User::class)
-            ->with('posts')
-            ->where('status', '=', 'active')
-            ->orderBy('created_at', 'desc')
-            ->get();
-    }
-
-    public function findByEmailWithProfile(string $email): ?User
-    {
-        return $this->em->query(User::class)
-            ->with('profile')
-            ->where('email', '=', $email)
-            ->first();
-    }
 }
 ```
 
@@ -403,17 +485,17 @@ The Unit of Work tracks entity state and coordinates persistence.
 // Create new entities
 $user = new User();
 $user->name = 'John';
-$uow->persist($user);
+$em->persist($user);
 
 // Modify existing entities (explicit dirty marking)
 $user->email = 'new@example.com';
-$uow->markDirty($user);
+$em->markDirty($user);
 
 // Remove entities
-$uow->remove($user);
+$em->remove($user);
 
 // Commit all changes in a transaction
-$uow->commit();
+$em->commit();
 ```
 
 ### Change Tracking
@@ -421,31 +503,13 @@ $uow->commit();
 PureMapper uses **explicit change tracking**. You must call `markDirty()` on modified entities:
 
 ```php
-$user = $repository->find(1);
+$user = $em->query(User::class)->find(1);
 $user->name = 'Updated Name';
-$uow->markDirty($user);  // Required to trigger UPDATE
-$uow->commit();
+$em->markDirty($user);  // Required to trigger UPDATE
+$em->commit();
 ```
 
 This design is intentional - no hidden magic, no unexpected queries.
-
-### Cascade Persist
-
-New related entities are automatically persisted when the parent is persisted:
-
-```php
-$user = new User();
-$user->name = 'John';
-
-$post = new Post();
-$post->title = 'Hello World';
-$user->posts[] = $post;
-
-$uow->persist($user);
-$uow->commit(); // Both User and Post are inserted
-```
-
-> Note: Cascade remove is not supported. Remove entities explicitly.
 
 ### Transaction Control
 
@@ -453,16 +517,16 @@ By default, `commit()` wraps all operations in a transaction. For manual control
 
 ```php
 // Auto transaction (default)
-$uow->commit();
+$em->commit();
 
 // Manual transaction control
-$uow->setAutoTransaction(false);
-$conn->beginTransaction();
+$em->getUnitOfWork()->setAutoTransaction(false);
+$connection->beginTransaction();
 try {
-    $uow->commit();
-    $conn->commit();
+    $em->commit();
+    $connection->commit();
 } catch (Exception $e) {
-    $conn->rollBack();
+    $connection->rollBack();
     throw $e;
 }
 ```
@@ -471,90 +535,34 @@ try {
 
 ## Metadata Caching
 
-For production environments, PureMapper supports PSR-16 metadata caching to avoid rebuilding entity mappings on every request.
-
-### Development vs Production
-
-| Environment | Registry | Reason |
-|-------------|----------|--------|
-| Development | `MetadataRegistry` | No cache, changes apply immediately |
-| Production | `CachedMetadataRegistry` | Performance, metadata rarely changes |
-
-### Basic Setup
+For production environments, PureMapper supports PSR-16 metadata caching.
 
 ```php
 use PureMapper\Mapping\MetadataRegistry;
 use PureMapper\Mapping\CachedMetadataRegistry;
-use Psr\SimpleCache\CacheInterface;
 
 // Development - no caching
 $registry = new MetadataRegistry();
 
 // Production - with PSR-16 cache
-/** @var CacheInterface $cache */
 $cachedRegistry = new CachedMetadataRegistry(
     $registry,
-    $cache,
-    prefix: 'puremapper_metadata_',  // Optional: custom prefix
-    ttl: 3600,                        // Optional: TTL in seconds
+    $cache,  // PSR-16 CacheInterface
+    prefix: 'puremapper_metadata_',
+    ttl: 3600,
 );
-```
 
-### Cache Warming
-
-For best performance, warm the cache during deployment:
-
-```php
-// Register all entity mappings
-$registry->register($userMetadata);
-$registry->register($postMetadata);
-
-// Warm cache (stores all metadata in persistent cache)
+// Warm cache during deployment
 $cachedRegistry->warm();
-```
 
-### Cache Invalidation
-
-Invalidate cache when entity mappings change (typically during deployment):
-
-```php
-// Invalidate single entity
+// Invalidate when mappings change
 $cachedRegistry->invalidate(User::class);
-
-// Invalidate all cached metadata
 $cachedRegistry->invalidateAll();
-
-// Clear only runtime (in-memory) cache - useful for long-running processes
-$cachedRegistry->clearRuntimeCache();
-```
-
-### How It Works
-
-`CachedMetadataRegistry` uses two-tier caching:
-
-1. **Runtime cache** (array) - Zero overhead lookups within same request
-2. **Persistent cache** (PSR-16) - Cross-request caching (Redis, Memcached, file, etc.)
-
-Cache keys are versioned (`puremapper_metadata_v1_...`) to allow automatic invalidation when the internal structure changes.
-
-### Multi-Application Support
-
-Use custom prefixes to isolate cache entries in shared cache environments:
-
-```php
-// App 1
-$registry1 = new CachedMetadataRegistry($inner, $cache, prefix: 'app1_metadata_');
-
-// App 2
-$registry2 = new CachedMetadataRegistry($inner, $cache, prefix: 'app2_metadata_');
 ```
 
 ---
 
 ## Identity Map
-
-The identity map is scoped to a single UnitOfWork instance.
-It is cleared after commit(), rollback(), or clear().
 
 The Unit of Work maintains an **identity map** to ensure:
 
@@ -563,11 +571,13 @@ The Unit of Work maintains an **identity map** to ensure:
 * Entity identity is preserved across operations
 
 ```php
-$user1 = $repository->find(1);
-$user2 = $repository->find(1);
+$user1 = $em->query(User::class)->find(1);
+$user2 = $em->query(User::class)->find(1);
 
 assert($user1 === $user2); // Same instance
 ```
+
+The identity map is cleared after `commit()` or `clear()`.
 
 ---
 
@@ -578,25 +588,6 @@ PureMapper provides a repository interface. Implementation is yours:
 ```php
 use PureMapper\Repository\RepositoryInterface;
 
-/**
- * @template T of object
- */
-interface RepositoryInterface
-{
-    /** @return T|null */
-    public function find(int|string|array $id): ?object;
-
-    /** @return T[] */
-    public function findAll(): array;
-
-    /** @return T[] */
-    public function findBy(array $criteria): array;
-}
-```
-
-### Example Implementation
-
-```php
 final class UserRepository implements RepositoryInterface
 {
     public function __construct(
@@ -616,19 +607,10 @@ final class UserRepository implements RepositoryInterface
     public function findBy(array $criteria): array
     {
         $query = $this->em->query(User::class);
-
         foreach ($criteria as $field => $value) {
             $query->where($field, '=', $value);
         }
-
         return $query->get();
-    }
-
-    public function findByEmail(string $email): ?User
-    {
-        return $this->em->query(User::class)
-            ->where('email', '=', $email)
-            ->first();
     }
 
     public function findActiveWithPosts(): array
@@ -646,119 +628,35 @@ final class UserRepository implements RepositoryInterface
 
 ## Advanced Usage
 
-### Complex Query Composition
+### Raw SQL Queries
 
-Build sophisticated queries by chaining multiple conditions:
-
-```php
-// Multiple conditions with different operators
-$users = $em->query(User::class)
-    ->where('status', '=', 'active')
-    ->where('age', '>=', 18)
-    ->where('role', '!=', 'guest')
-    ->where('email', 'LIKE', '%@company.com')
-    ->orderBy('created_at', 'desc')
-    ->orderBy('name', 'asc')
-    ->limit(20)
-    ->offset(40)
-    ->get();
-
-// Composite primary key lookup
-$tenantUser = $em->query(TenantUser::class)
-    ->find(['tenant_id' => 1, 'user_id' => 42]);
-
-// Combine filtering with eager loading
-$orders = $em->query(Order::class)
-    ->with('items', 'customer')
-    ->where('status', '=', 'pending')
-    ->where('total', '>', 100)
-    ->orderBy('created_at', 'desc')
-    ->limit(50)
-    ->get();
-```
-
-### Hydration Flow
-
-Hydration is the process of converting database rows into PHP objects. Here's how it works:
-
-```
-Database Row (array)
-       |
-       v
-+------------------+
-|    Hydrator      |
-+------------------+
-       |
-       | 1. Create empty instance (no constructor)
-       | 2. For each mapped field:
-       |    - Get value from row
-       |    - Apply TypeConverter if registered
-       |    - Set property via reflection
-       v
-PHP Entity (object)
-```
-
-**Example flow:**
+For complex queries, use the Connection directly:
 
 ```php
-// Database returns:
-['id' => 1, 'name' => 'John', 'created_at' => '2024-12-14 10:30:00', 'settings' => '{"theme":"dark"}']
+// Raw SELECT
+$rows = $connection->select(
+    new CompiledQuery(
+        'SELECT u.*, COUNT(p.id) as post_count FROM users u LEFT JOIN posts p ON p.user_id = u.id GROUP BY u.id',
+        []
+    )
+);
 
-// After hydration:
-$user->id = 1;                                              // int (no conversion)
-$user->name = 'John';                                       // string (no conversion)
-$user->createdAt = DateTimeImmutable('2024-12-14 10:30:00'); // DateTimeConverter applied
-$user->settings = ['theme' => 'dark'];                      // JsonConverter applied
-```
+// Hydrate results
+$hydrator = $em->getHydrator();
+$users = array_map(
+    fn($row) => $hydrator->hydrate(User::class, $row),
+    $rows
+);
 
-**Extraction** (reverse process for INSERT/UPDATE):
-
-```php
-// PHP Entity:
-$user->id = 1;
-$user->createdAt = new DateTimeImmutable('2024-12-14');
-$user->settings = ['theme' => 'dark'];
-
-// After extraction (ready for database):
-['id' => 1, 'created_at' => '2024-12-14 00:00:00', 'settings' => '{"theme":"dark"}']
+// DDL statements
+$connection->statement('CREATE INDEX idx_users_email ON users(email)');
 ```
 
 ### Custom TypeConverter
 
-Create converters for domain-specific types:
-
 ```php
 use PureMapper\Type\TypeConverter;
 
-// Value Object for money
-final class Money
-{
-    public function __construct(
-        public readonly int $cents,
-        public readonly string $currency = 'USD',
-    ) {}
-
-    public static function fromCents(int $cents): self
-    {
-        return new self($cents);
-    }
-}
-
-// Converter implementation
-final class MoneyConverter implements TypeConverter
-{
-    public function toPHP(mixed $value): Money
-    {
-        return Money::fromCents((int) $value);
-    }
-
-    public function toDatabase(mixed $value): int
-    {
-        return $value->cents;
-    }
-}
-
-// UUID converter example
 final class UuidConverter implements TypeConverter
 {
     public function toPHP(mixed $value): Uuid
@@ -772,210 +670,14 @@ final class UuidConverter implements TypeConverter
     }
 }
 
-// Register and use
-$typeRegistry->register('money', new MoneyConverter());
 $typeRegistry->register('uuid', new UuidConverter());
 
 $mapper = (new EntityMapper(Product::class))
     ->table('products')
-    ->id('id', 'uuid')           // UUID primary key
+    ->id('id', 'uuid')
     ->field('name', 'string')
-    ->field('price', 'money')    // Stored as cents in DB
     ->build();
 ```
-
-### Raw Queries with Manual Hydration
-
-For complex queries (JOINs, subqueries, aggregations), use raw SQL with manual hydration:
-
-```php
-final class OrderRepository implements RepositoryInterface
-{
-    public function __construct(
-        private EntityManager $em,
-    ) {}
-
-    /**
-     * Complex JOIN query - get orders with customer data in single query.
-     */
-    public function findWithCustomerDetails(int $orderId): ?array
-    {
-        $sql = <<<'SQL'
-            SELECT
-                o.id, o.status, o.total, o.created_at,
-                c.id as customer_id, c.name as customer_name, c.email as customer_email
-            FROM orders o
-            INNER JOIN customers c ON c.id = o.customer_id
-            WHERE o.id = ?
-        SQL;
-
-        $row = $this->em->getConnection()->selectOne($sql, [$orderId]);
-
-        if ($row === null) {
-            return null;
-        }
-
-        return [
-            'order' => $this->em->getHydrator()->hydrate(Order::class, (array) $row),
-            'customer' => $this->em->getHydrator()->hydrate(Customer::class, [
-                'id' => $row->customer_id,
-                'name' => $row->customer_name,
-                'email' => $row->customer_email,
-            ]),
-        ];
-    }
-
-    /**
-     * Subquery example - find customers with order count.
-     */
-    public function findTopCustomers(int $minOrders = 5): array
-    {
-        $sql = <<<'SQL'
-            SELECT
-                c.*,
-                (SELECT COUNT(*) FROM orders WHERE customer_id = c.id) as order_count,
-                (SELECT SUM(total) FROM orders WHERE customer_id = c.id) as total_spent
-            FROM customers c
-            HAVING order_count >= ?
-            ORDER BY total_spent DESC
-            LIMIT 100
-        SQL;
-
-        $rows = $this->em->getConnection()->select($sql, [$minOrders]);
-        $hydrator = $this->em->getHydrator();
-
-        return array_map(function ($row) use ($hydrator) {
-            $customer = $hydrator->hydrate(Customer::class, (array) $row);
-            // Attach computed fields
-            $customer->orderCount = (int) $row->order_count;
-            $customer->totalSpent = (int) $row->total_spent;
-            return $customer;
-        }, $rows);
-    }
-
-    /**
-     * Aggregation query - monthly sales report.
-     */
-    public function getMonthlySalesReport(int $year): array
-    {
-        $sql = <<<'SQL'
-            SELECT
-                MONTH(created_at) as month,
-                COUNT(*) as order_count,
-                SUM(total) as revenue,
-                AVG(total) as avg_order_value
-            FROM orders
-            WHERE YEAR(created_at) = ? AND status = 'completed'
-            GROUP BY MONTH(created_at)
-            ORDER BY month
-        SQL;
-
-        return $this->em->getConnection()->select($sql, [$year]);
-    }
-
-    /**
-     * Complex WHERE with OR conditions using Query Builder.
-     */
-    public function searchOrders(string $keyword): array
-    {
-        $rows = $this->em->getConnection()
-            ->table('orders')
-            ->where(function ($query) use ($keyword) {
-                $query->where('id', '=', $keyword)
-                    ->orWhere('reference', 'LIKE', "%{$keyword}%")
-                    ->orWhere('notes', 'LIKE', "%{$keyword}%");
-            })
-            ->where('status', '!=', 'cancelled')
-            ->orderBy('created_at', 'desc')
-            ->limit(50)
-            ->get();
-
-        return array_map(
-            fn ($row) => $this->em->getHydrator()->hydrate(Order::class, (array) $row),
-            $rows->all()
-        );
-    }
-
-    /**
-     * Batch hydration with relations loaded separately.
-     */
-    public function findRecentWithItems(int $days = 7): array
-    {
-        // 1. Get orders with raw query
-        $sql = <<<'SQL'
-            SELECT o.*
-            FROM orders o
-            WHERE o.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-              AND o.status IN ('pending', 'processing')
-            ORDER BY o.created_at DESC
-        SQL;
-
-        $rows = $this->em->getConnection()->select($sql, [$days]);
-        $hydrator = $this->em->getHydrator();
-
-        $orders = array_map(
-            fn ($row) => $hydrator->hydrate(Order::class, (array) $row),
-            $rows
-        );
-
-        if (empty($orders)) {
-            return [];
-        }
-
-        // 2. Batch load items (avoid N+1)
-        $orderIds = array_map(fn ($o) => $o->id, $orders);
-        $itemRows = $this->em->getConnection()
-            ->table('order_items')
-            ->whereIn('order_id', $orderIds)
-            ->get();
-
-        // 3. Group items by order_id
-        $itemsByOrder = [];
-        foreach ($itemRows as $row) {
-            $itemsByOrder[$row->order_id][] = $hydrator->hydrate(OrderItem::class, (array) $row);
-        }
-
-        // 4. Assign items to orders
-        foreach ($orders as $order) {
-            $order->items = $itemsByOrder[$order->id] ?? [];
-        }
-
-        return $orders;
-    }
-
-    // Standard interface methods
-    public function find(int|string|array $id): ?Order
-    {
-        return $this->em->query(Order::class)->find($id);
-    }
-
-    public function findAll(): array
-    {
-        return $this->em->query(Order::class)->get();
-    }
-
-    public function findBy(array $criteria): array
-    {
-        $query = $this->em->query(Order::class);
-        foreach ($criteria as $field => $value) {
-            $query->where($field, '=', $value);
-        }
-        return $query->get();
-    }
-}
-```
-
-**Key methods for raw queries:**
-
-| Method | Returns | Use Case |
-|--------|---------|----------|
-| `$em->getConnection()` | `ConnectionInterface` | Access Illuminate Query Builder |
-| `$em->getHydrator()` | `Hydrator` | Convert rows to entities |
-| `$connection->select($sql, $bindings)` | `array` | Raw SELECT query |
-| `$connection->selectOne($sql, $bindings)` | `object\|null` | Single row query |
-| `$connection->table($name)` | `Builder` | Fluent Query Builder |
-| `$hydrator->hydrate($class, $row)` | `object` | Row to entity |
-| `$hydrator->extract($entity)` | `array` | Entity to row |
 
 ---
 
@@ -985,13 +687,12 @@ final class OrderRepository implements RepositoryInterface
 |---------------------------|------------|----------|----------|
 | Pure entities             | Yes        | Partial  | No       |
 | No annotations/attributes | Yes        | No       | No       |
+| Zero dependencies         | Yes        | No       | No       |
 | Lightweight               | Yes        | No       | No       |
 | Explicit mapping          | Yes        | Partial  | No       |
-| Framework agnostic domain | Yes        | Yes      | No       |
+| Framework agnostic        | Yes        | Yes      | No       |
 | Explicit change tracking  | Yes        | No       | No       |
 | No proxy generation       | Yes        | No       | Yes      |
-| Fluent Query Builder      | Yes(thin)  | Partial  | Yes      |
-| Eager loading with `with()`| Yes       | Yes      | Yes      |
 
 ---
 
@@ -999,11 +700,18 @@ final class OrderRepository implements RepositoryInterface
 
 PureMapper is intentionally minimal. Do not use it if you need:
 
-* Automatic graph synchronization (aggregate boundaries must be explicit)
-* Schema migrations (use Doctrine Migrations or Laravel Migrations separately)
-* Automatic dirty checking (PureMapper requires explicit `markDirty()`)
-* Lazy loading (PureMapper uses eager loading only)
+* Automatic graph synchronization
+* Schema migrations (use dedicated migration tools)
+* Automatic dirty checking
+* Lazy loading
 * Complex inheritance mapping
+* Query caching
+
+---
+
+## Upgrading
+
+See [UPGRADE.md](UPGRADE.md) for migration guides between major versions.
 
 ---
 
@@ -1011,13 +719,14 @@ PureMapper is intentionally minimal. Do not use it if you need:
 
 ### Completed
 
-* [x] Metadata Caching (PSR-16 support with `CachedMetadataRegistry`)
+* [x] Metadata Caching (PSR-16 support)
+* [x] Pure PDO (removed illuminate/database dependency)
 
 ### Planned
 
 * [ ] Event dispatching (prePersist, postPersist, preUpdate, postUpdate, preRemove, postRemove, postLoad)
-* [ ] Embedded/Value Objects (e.g., Money, Address mapping to multiple columns)
-* [ ] Soft Deletes (automatic `deleted_at` filtering)
+* [ ] Embedded/Value Objects
+* [ ] Soft Deletes
 
 ---
 
