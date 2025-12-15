@@ -153,8 +153,8 @@ final class SqlBuilder
         // JOIN clauses
         foreach ($this->joins as $join) {
             $sql .= " {$join['type']} JOIN " . $this->driver->quoteIdentifier($join['table']);
-            $sql .= ' ON ' . $this->driver->quoteIdentifier($join['first']);
-            $sql .= " {$join['operator']} " . $this->driver->quoteIdentifier($join['second']);
+            $sql .= ' ON ' . $this->driver->quoteCompoundIdentifier($join['first']);
+            $sql .= " {$join['operator']} " . $this->driver->quoteCompoundIdentifier($join['second']);
         }
 
         // WHERE clause

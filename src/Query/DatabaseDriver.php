@@ -17,4 +17,21 @@ enum DatabaseDriver: string
             self::PostgreSQL, self::SQLite => "\"{$identifier}\"",
         };
     }
+
+    /**
+     * Quote a compound identifier (e.g., "table.column" -> "`table`.`column`").
+     */
+    public function quoteCompoundIdentifier(string $identifier): string
+    {
+        if (!str_contains($identifier, '.')) {
+            return $this->quoteIdentifier($identifier);
+        }
+
+        $parts = explode('.', $identifier);
+
+        return implode('.', array_map(
+            fn(string $part) => $this->quoteIdentifier($part),
+            $parts,
+        ));
+    }
 }

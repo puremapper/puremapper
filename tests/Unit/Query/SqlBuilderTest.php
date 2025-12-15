@@ -161,7 +161,7 @@ final class SqlBuilderTest extends TestCase
             ->toSelect();
 
         $this->assertSame(
-            'SELECT * FROM `users` INNER JOIN `posts` ON `users.id` = `posts.user_id`',
+            'SELECT * FROM `users` INNER JOIN `posts` ON `users`.`id` = `posts`.`user_id`',
             $query->sql,
         );
         $this->assertSame([], $query->params);
@@ -178,7 +178,7 @@ final class SqlBuilderTest extends TestCase
             ->toSelect();
 
         $this->assertSame(
-            'SELECT * FROM `users` LEFT JOIN `profiles` ON `users.id` = `profiles.user_id`',
+            'SELECT * FROM `users` LEFT JOIN `profiles` ON `users`.`id` = `profiles`.`user_id`',
             $query->sql,
         );
         $this->assertSame([], $query->params);
@@ -296,5 +296,39 @@ final class SqlBuilderTest extends TestCase
             ->toSelect();
 
         $this->assertSame('SELECT "id", "name" FROM "users" WHERE "status" = ?', $query->sql);
+    }
+
+    #[Test]
+    public function joinShouldQuoteTableAndColumnSeparately(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->join('posts', 'users.id', '=', 'posts.user_id')
+            ->toSelect();
+
+        // Correct: each part of table.column should be quoted separately
+        $this->assertSame(
+            'SELECT * FROM `users` INNER JOIN `posts` ON `users`.`id` = `posts`.`user_id`',
+            $query->sql,
+        );
+    }
+
+    #[Test]
+    public function leftJoinShouldQuoteTableAndColumnSeparatelyPostgres(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::PostgreSQL);
+
+        $query = $builder
+            ->table('orders')
+            ->leftJoin('customers', 'orders.customer_id', '=', 'customers.id')
+            ->toSelect();
+
+        // Correct: PostgreSQL uses double quotes, each part quoted separately
+        $this->assertSame(
+            'SELECT * FROM "orders" LEFT JOIN "customers" ON "orders"."customer_id" = "customers"."id"',
+            $query->sql,
+        );
     }
 }
