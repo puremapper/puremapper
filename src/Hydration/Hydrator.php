@@ -145,6 +145,25 @@ final class Hydrator
     }
 
     /**
+     * Set the primary key value on an entity (for auto-increment IDs).
+     */
+    public function setIdentifier(object $entity, mixed $id): void
+    {
+        $class = $entity::class;
+        $metadata = $this->metadataCache[$class] ??= $this->metadataRegistry->get($class);
+
+        if (\is_array($metadata->primaryKey)) {
+            foreach ($metadata->primaryKey as $key) {
+                $setter = $this->getSetter($class, $key);
+                $setter($entity, $id[$key] ?? null);
+            }
+        } else {
+            $setter = $this->getSetter($class, $metadata->primaryKey);
+            $setter($entity, $id);
+        }
+    }
+
+    /**
      * @template T of object
      * @param class-string<T> $class
      * @return ReflectionClass<T>

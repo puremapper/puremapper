@@ -7,7 +7,6 @@ namespace PureMapper\Persistence;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Query\Connection;
-use ReflectionProperty;
 use RuntimeException;
 use SplObjectStorage;
 use Throwable;
@@ -225,8 +224,7 @@ final class UnitOfWork
                 $column = $metadata->fields[$metadata->primaryKey]->column ?? $metadata->primaryKey;
                 if (!isset($data[$column])) {
                     $id = $this->connection->insert($query);
-                    $reflection = new ReflectionProperty($entity, $metadata->primaryKey);
-                    $reflection->setValue($entity, (int) $id);
+                    $this->hydrator->setIdentifier($entity, (int) $id);
                 } else {
                     $this->connection->execute($query);
                 }

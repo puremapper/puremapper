@@ -160,6 +160,42 @@ final class HydratorTest extends TestCase
         $this->assertSame(['tenantId' => 1, 'userId' => 42], $id);
     }
 
+    public function testSetIdentifierSingleKey(): void
+    {
+        $this->registerUserMetadata();
+
+        $user = new HydratorTestUser();
+        $user->name = 'John';
+        $user->email = 'john@example.com';
+
+        $this->assertNull($user->id);
+
+        $this->hydrator->setIdentifier($user, 123);
+
+        $this->assertSame(123, $user->id);
+    }
+
+    public function testSetIdentifierCompositeKey(): void
+    {
+        $this->metadataRegistry->register(
+            (new EntityMapper(HydratorTestTenantUser::class))
+                ->table('tenant_users')
+                ->id(['tenantId', 'userId'])
+                ->field('tenantId', 'int', column: 'tenant_id')
+                ->field('userId', 'int', column: 'user_id')
+                ->field('role', 'string')
+                ->build(),
+        );
+
+        $tenantUser = new HydratorTestTenantUser();
+        $tenantUser->role = 'admin';
+
+        $this->hydrator->setIdentifier($tenantUser, ['tenantId' => 5, 'userId' => 99]);
+
+        $this->assertSame(5, $tenantUser->tenantId);
+        $this->assertSame(99, $tenantUser->userId);
+    }
+
     private function registerUserMetadata(): void
     {
         $this->metadataRegistry->register(
