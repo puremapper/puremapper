@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PureMapper\Hydration;
 
 use PureMapper\Exception\HydrationException;
+use PureMapper\Mapping\EntityMetadata;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Type\TypeRegistry;
 use ReflectionClass;
@@ -22,6 +23,13 @@ final class Hydrator
      */
     private array $propertyCache = [];
 
+    /**
+     * Local metadata cache to avoid repeated registry lookups.
+     *
+     * @var array<class-string, EntityMetadata>
+     */
+    private array $metadataCache = [];
+
     public function __construct(
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly TypeRegistry $typeRegistry,
@@ -38,22 +46,28 @@ final class Hydrator
      */
     public function hydrate(string $class, array $row): object
     {
-        $metadata = $this->metadataRegistry->get($class);
+        // Cache metadata locally to avoid repeated registry lookups
+        $metadata = $this->metadataCache[$class] ??= $this->metadataRegistry->get($class);
+
         $reflection = $this->getReflection($class);
         $entity = $reflection->newInstanceWithoutConstructor();
 
-        foreach ($metadata->fields as $property => $field) {
-            $column = $field->column;
+        // Use precomputed maps for O(1) lookups
+        foreach ($row as $column => $value) {
+            // O(1) column → property lookup
+            $property = $metadata->columnToProperty[$column] ?? null;
 
-            if (!\array_key_exists($column, $row)) {
+            if ($property === null) {
                 continue;
             }
 
-            $value = $row[$column];
+            if ($value !== null) {
+                // O(1) property → type lookup
+                $type = $metadata->propertyToType[$property] ?? null;
 
-            if ($value !== null && $this->typeRegistry->has($field->type)) {
-                $converter = $this->typeRegistry->get($field->type);
-                $value = $converter->toPHP($value);
+                if ($type !== null && $this->typeRegistry->has($type)) {
+                    $value = $this->typeRegistry->get($type)->toPHP($value);
+                }
             }
 
             $this->setPropertyValue($entity, $class, $property, $value);
@@ -71,18 +85,24 @@ final class Hydrator
     public function extract(object $entity): array
     {
         $class = $entity::class;
-        $metadata = $this->metadataRegistry->get($class);
+        // Cache metadata locally to avoid repeated registry lookups
+        $metadata = $this->metadataCache[$class] ??= $this->metadataRegistry->get($class);
         $data = [];
 
-        foreach ($metadata->fields as $property => $field) {
+        // Use precomputed maps for O(1) lookups
+        foreach ($metadata->propertyToColumn as $property => $column) {
             $value = $this->getPropertyValue($entity, $class, $property);
 
-            if ($value !== null && $this->typeRegistry->has($field->type)) {
-                $converter = $this->typeRegistry->get($field->type);
-                $value = $converter->toDatabase($value);
+            if ($value !== null) {
+                // O(1) property → type lookup
+                $type = $metadata->propertyToType[$property] ?? null;
+
+                if ($type !== null && $this->typeRegistry->has($type)) {
+                    $value = $this->typeRegistry->get($type)->toDatabase($value);
+                }
             }
 
-            $data[$field->column] = $value;
+            $data[$column] = $value;
         }
 
         return $data;
@@ -96,7 +116,8 @@ final class Hydrator
     public function getIdentifier(object $entity): mixed
     {
         $class = $entity::class;
-        $metadata = $this->metadataRegistry->get($class);
+        // Cache metadata locally to avoid repeated registry lookups
+        $metadata = $this->metadataCache[$class] ??= $this->metadataRegistry->get($class);
 
         $keys = \is_array($metadata->primaryKey)
             ? $metadata->primaryKey

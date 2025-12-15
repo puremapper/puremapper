@@ -7,6 +7,27 @@ namespace PureMapper\Mapping;
 final readonly class EntityMetadata
 {
     /**
+     * Precomputed column → property map for O(1) lookup.
+     *
+     * @var array<string, string>
+     */
+    public array $columnToProperty;
+
+    /**
+     * Precomputed property → column map for O(1) lookup.
+     *
+     * @var array<string, string>
+     */
+    public array $propertyToColumn;
+
+    /**
+     * Precomputed property → type map for O(1) lookup.
+     *
+     * @var array<string, string>
+     */
+    public array $propertyToType;
+
+    /**
      * @param class-string $entityClass
      * @param string|array<string> $primaryKey
      * @param array<string, FieldMetadata> $fields
@@ -18,18 +39,29 @@ final readonly class EntityMetadata
         public string|array $primaryKey,
         public array $fields = [],
         public array $relations = [],
-    ) {}
+    ) {
+        // Precompute lookup maps at construction time (once)
+        $columnToProperty = [];
+        $propertyToColumn = [];
+        $propertyToType = [];
+
+        foreach ($fields as $property => $field) {
+            $columnToProperty[$field->column] = $property;
+            $propertyToColumn[$property] = $field->column;
+            $propertyToType[$property] = $field->type;
+        }
+
+        $this->columnToProperty = $columnToProperty;
+        $this->propertyToColumn = $propertyToColumn;
+        $this->propertyToType = $propertyToType;
+    }
 
     /**
      * Get the column name for a property.
      */
     public function getColumnForProperty(string $property): ?string
     {
-        if (isset($this->fields[$property])) {
-            return $this->fields[$property]->column;
-        }
-
-        return null;
+        return $this->propertyToColumn[$property] ?? null;
     }
 
     /**
@@ -37,13 +69,15 @@ final readonly class EntityMetadata
      */
     public function getPropertyForColumn(string $column): ?string
     {
-        foreach ($this->fields as $property => $field) {
-            if ($field->column === $column) {
-                return $property;
-            }
-        }
+        return $this->columnToProperty[$column] ?? null;
+    }
 
-        return null;
+    /**
+     * Get the type for a property.
+     */
+    public function getTypeForProperty(string $property): ?string
+    {
+        return $this->propertyToType[$property] ?? null;
     }
 
     /**
@@ -57,7 +91,7 @@ final readonly class EntityMetadata
         $columns = [];
 
         foreach ($keys as $key) {
-            $columns[] = $this->fields[$key]->column ?? $key;
+            $columns[] = $this->propertyToColumn[$key] ?? $key;
         }
 
         return $columns;
