@@ -22,17 +22,17 @@ final class UnitOfWork
     private SplObjectStorage $entityStates;
 
     /**
-     * @var array<object>
+     * @var array<int, object>
      */
     private array $scheduledInserts = [];
 
     /**
-     * @var array<object>
+     * @var array<int, object>
      */
     private array $scheduledUpdates = [];
 
     /**
-     * @var array<object>
+     * @var array<int, object>
      */
     private array $scheduledDeletes = [];
 
@@ -65,7 +65,8 @@ final class UnitOfWork
         }
 
         if ($id === null || $this->isNewEntity($entity)) {
-            $this->scheduledInserts[] = $entity;
+            $oid = \spl_object_id($entity);
+            $this->scheduledInserts[$oid] = $entity;
             $this->entityStates[$entity] = EntityState::New;
         } else {
             // Entity with ID - add to identity map as managed
@@ -92,10 +93,8 @@ final class UnitOfWork
             throw new RuntimeException('Cannot modify a removed entity.');
         }
 
-        if (!\in_array($entity, $this->scheduledUpdates, true)) {
-            $this->scheduledUpdates[] = $entity;
-        }
-
+        $oid = \spl_object_id($entity);
+        $this->scheduledUpdates[$oid] = $entity;
         $this->entityStates[$entity] = EntityState::Dirty;
     }
 
@@ -110,17 +109,16 @@ final class UnitOfWork
 
         $state = $this->entityStates[$entity];
 
+        $oid = \spl_object_id($entity);
+
         if ($state === EntityState::New) {
             // Not yet persisted, just remove from inserts
-            $this->scheduledInserts = array_filter(
-                $this->scheduledInserts,
-                fn($e) => $e !== $entity,
-            );
+            unset($this->scheduledInserts[$oid]);
             $this->entityStates->offsetUnset($entity);
             return;
         }
 
-        $this->scheduledDeletes[] = $entity;
+        $this->scheduledDeletes[$oid] = $entity;
         $this->entityStates[$entity] = EntityState::Removed;
     }
 
