@@ -399,7 +399,7 @@ final class EntityQuery
         $targetPkColumn = $targetMetadata->fields[$targetPk]->column ?? $targetPk;
 
         // Collect foreign key values
-        $fkReflection = new ReflectionProperty($this->entityClass, $this->getPropertyForColumn($metadata, $foreignKey) ?? $foreignKey);
+        $fkReflection = new ReflectionProperty($this->entityClass, $metadata->getPropertyForColumn($foreignKey) ?? $foreignKey);
         $fkValues = [];
         foreach ($entities as $entity) {
             if ($fkReflection->isInitialized($entity)) {
@@ -524,14 +524,4 @@ final class EntityQuery
         }
     }
 
-    private function getPropertyForColumn(EntityMetadata $metadata, string $column): ?string
-    {
-        foreach ($metadata->fields as $property => $field) {
-            if ($field->column === $column) {
-                return $property;
-            }
-        }
-
-        return null;
-    }
 }
