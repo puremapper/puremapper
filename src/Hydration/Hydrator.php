@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace PureMapper\Hydration;
 
-use PureMapper\Exception\HydrationException;
+use Closure;
 use PureMapper\Mapping\EntityMetadata;
 use PureMapper\Mapping\MetadataRegistryInterface;
 use PureMapper\Type\TypeRegistry;
 use ReflectionClass;
-use ReflectionProperty;
 
 final class Hydrator
 {
@@ -19,9 +18,18 @@ final class Hydrator
     private array $reflectionCache = [];
 
     /**
-     * @var array<class-string, array<string, ReflectionProperty>>
+     * Cached closure-based setters for direct property access.
+     *
+     * @var array<class-string, array<string, Closure>>
      */
-    private array $propertyCache = [];
+    private array $setterCache = [];
+
+    /**
+     * Cached closure-based getters for direct property access.
+     *
+     * @var array<class-string, array<string, Closure>>
+     */
+    private array $getterCache = [];
 
     /**
      * Local metadata cache to avoid repeated registry lookups.
@@ -42,7 +50,6 @@ final class Hydrator
      * @param class-string<T> $class
      * @param array<string, mixed> $row
      * @return T
-     * @throws HydrationException
      */
     public function hydrate(string $class, array $row): object
     {
@@ -70,7 +77,9 @@ final class Hydrator
                 }
             }
 
-            $this->setPropertyValue($entity, $class, $property, $value);
+            // Use closure-based setter for faster property access
+            $setter = $this->getSetter($class, $property);
+            $setter($entity, $value);
         }
 
         return $entity;
@@ -91,7 +100,9 @@ final class Hydrator
 
         // Use precomputed maps for O(1) lookups
         foreach ($metadata->propertyToColumn as $property => $column) {
-            $value = $this->getPropertyValue($entity, $class, $property);
+            // Use closure-based getter for faster property access
+            $getter = $this->getGetter($class, $property);
+            $value = $getter($entity);
 
             if ($value !== null) {
                 // O(1) property → type lookup
@@ -125,7 +136,9 @@ final class Hydrator
 
         $values = [];
         foreach ($keys as $key) {
-            $values[$key] = $this->getPropertyValue($entity, $class, $key);
+            // Use closure-based getter for faster property access
+            $getter = $this->getGetter($class, $key);
+            $values[$key] = $getter($entity);
         }
 
         return \count($values) === 1 ? reset($values) : $values;
@@ -147,61 +160,50 @@ final class Hydrator
     }
 
     /**
-     * Get a cached ReflectionProperty instance.
+     * Get a cached closure-based setter for direct property access.
+     * Closures bound to the class scope are faster than ReflectionProperty::setValue().
      *
      * @param class-string $class
      */
-    private function getProperty(string $class, string $property): ?ReflectionProperty
+    private function getSetter(string $class, string $property): Closure
     {
-        if (!isset($this->propertyCache[$class][$property])) {
-            $reflection = $this->getReflection($class);
+        if (!isset($this->setterCache[$class][$property])) {
+            /** @var Closure $setter */
+            $setter = Closure::bind(
+                static function (object $entity, mixed $value) use ($property): void {
+                    $entity->{$property} = $value;
+                },
+                null,
+                $class
+            );
 
-            if (!$reflection->hasProperty($property)) {
-                return null;
-            }
-
-            $this->propertyCache[$class][$property] = $reflection->getProperty($property);
+            $this->setterCache[$class][$property] = $setter;
         }
 
-        return $this->propertyCache[$class][$property];
+        return $this->setterCache[$class][$property];
     }
 
     /**
+     * Get a cached closure-based getter for direct property access.
+     * Closures bound to the class scope are faster than ReflectionProperty::getValue().
+     *
      * @param class-string $class
      */
-    private function setPropertyValue(
-        object $entity,
-        string $class,
-        string $property,
-        mixed $value,
-    ): void {
-        $prop = $this->getProperty($class, $property);
+    private function getGetter(string $class, string $property): Closure
+    {
+        if (!isset($this->getterCache[$class][$property])) {
+            /** @var Closure $getter */
+            $getter = Closure::bind(
+                static function (object $entity) use ($property): mixed {
+                    return $entity->{$property} ?? null;
+                },
+                null,
+                $class
+            );
 
-        if ($prop === null) {
-            return;
+            $this->getterCache[$class][$property] = $getter;
         }
 
-        $prop->setValue($entity, $value);
-    }
-
-    /**
-     * @param class-string $class
-     */
-    private function getPropertyValue(
-        object $entity,
-        string $class,
-        string $property,
-    ): mixed {
-        $prop = $this->getProperty($class, $property);
-
-        if ($prop === null) {
-            return null;
-        }
-
-        if (!$prop->isInitialized($entity)) {
-            return null;
-        }
-
-        return $prop->getValue($entity);
+        return $this->getterCache[$class][$property];
     }
 }
