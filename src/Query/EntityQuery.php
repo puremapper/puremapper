@@ -17,7 +17,7 @@ use ReflectionProperty;
  *
  * @method $this where(string $column, string $operator, mixed $value)
  * @method $this orWhere(string $column, string $operator, mixed $value)
- * @method $this whereIn(string $column, array $values)
+ * @method $this whereIn(string $column, array<mixed> $values)
  * @method $this whereNull(string $column)
  * @method $this whereNotNull(string $column)
  * @method $this orderBy(string $column, string $direction = 'ASC')
@@ -60,6 +60,7 @@ final class EntityQuery
 
     /**
      * @param array<mixed> $args
+     * @return self<T>
      */
     public function __call(string $method, array $args): self
     {
