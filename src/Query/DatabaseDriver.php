@@ -13,8 +13,8 @@ enum DatabaseDriver: string
     public function quoteIdentifier(string $identifier): string
     {
         return match ($this) {
-            self::MySQL => "`{$identifier}`",
-            self::PostgreSQL, self::SQLite => "\"{$identifier}\"",
+            self::MySQL => '`' . str_replace('`', '``', $identifier) . '`',
+            self::PostgreSQL, self::SQLite => '"' . str_replace('"', '""', $identifier) . '"',
         };
     }
 

@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace PureMapper\Query;
 
+use InvalidArgumentException;
 use RuntimeException;
 
 final class SqlBuilder
 {
+    private const ALLOWED_OPERATORS = [
+        '=', '!=', '<>', '<', '>', '<=', '>=',
+        'LIKE', 'NOT LIKE',
+    ];
+
+    private const ALLOWED_DIRECTIONS = ['ASC', 'DESC'];
+
     private ?string $table = null;
 
     /** @var array<string> */
@@ -48,7 +56,7 @@ final class SqlBuilder
         $this->wheres[] = [
             'type' => 'and',
             'column' => $column,
-            'operator' => $operator,
+            'operator' => $this->validateOperator($operator),
             'value' => $value,
         ];
 
@@ -60,7 +68,7 @@ final class SqlBuilder
         $this->wheres[] = [
             'type' => 'or',
             'column' => $column,
-            'operator' => $operator,
+            'operator' => $this->validateOperator($operator),
             'value' => $value,
         ];
 
@@ -112,9 +120,15 @@ final class SqlBuilder
 
     public function orderBy(string $column, string $direction = 'ASC'): self
     {
+        $direction = strtoupper($direction);
+
+        if (!in_array($direction, self::ALLOWED_DIRECTIONS, true)) {
+            throw new InvalidArgumentException("Invalid direction: {$direction}");
+        }
+
         $this->orderBys[] = [
             'column' => $column,
-            'direction' => strtoupper($direction),
+            'direction' => $direction,
         ];
 
         return $this;
@@ -140,7 +154,7 @@ final class SqlBuilder
             'type' => 'INNER',
             'table' => $table,
             'first' => $first,
-            'operator' => $operator,
+            'operator' => $this->validateOperator($operator),
             'second' => $second,
         ];
 
@@ -153,7 +167,7 @@ final class SqlBuilder
             'type' => 'LEFT',
             'table' => $table,
             'first' => $first,
-            'operator' => $operator,
+            'operator' => $this->validateOperator($operator),
             'second' => $second,
         ];
 
@@ -303,5 +317,16 @@ final class SqlBuilder
         }
 
         return implode(' ', $clauses);
+    }
+
+    private function validateOperator(string $operator): string
+    {
+        $operator = strtoupper(trim($operator));
+
+        if (!in_array($operator, self::ALLOWED_OPERATORS, true)) {
+            throw new InvalidArgumentException("Invalid operator: {$operator}");
+        }
+
+        return $operator;
     }
 }
