@@ -378,4 +378,147 @@ final class SqlBuilderTest extends TestCase
             $query->sql,
         );
     }
+
+    #[Test]
+    public function whereWithNestedAndGroup(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where('status', '=', 'active')
+            ->where(fn (SqlBuilder $q) => $q->where('role', '=', 'admin')->orWhere('role', '=', 'moderator'))
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE `status` = ? AND (`role` = ? OR `role` = ?)',
+            $query->sql,
+        );
+        $this->assertSame(['active', 'admin', 'moderator'], $query->params);
+    }
+
+    #[Test]
+    public function whereWithNestedOrGroup(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where('status', '=', 'active')
+            ->orWhere(fn (SqlBuilder $q) => $q->where('vip', '=', true)->where('balance', '>', 1000))
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE `status` = ? OR (`vip` = ? AND `balance` > ?)',
+            $query->sql,
+        );
+        $this->assertSame(['active', true, 1000], $query->params);
+    }
+
+    #[Test]
+    public function whereWithDeeplyNestedGroups(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where(fn (SqlBuilder $q) => $q
+                ->where('a', '=', 1)
+                ->where(fn (SqlBuilder $q2) => $q2->where('b', '=', 2)->orWhere('c', '=', 3)))
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE (`a` = ? AND (`b` = ? OR `c` = ?))',
+            $query->sql,
+        );
+        $this->assertSame([1, 2, 3], $query->params);
+    }
+
+    #[Test]
+    public function whereWithEmptyNestedGroupIsIgnored(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where('status', '=', 'active')
+            ->where(fn (SqlBuilder $q) => null) // Empty closure - nothing added
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE `status` = ?',
+            $query->sql,
+        );
+        $this->assertSame(['active'], $query->params);
+    }
+
+    #[Test]
+    public function whereNestedWithWhereInAndWhereNull(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where(fn (SqlBuilder $q) => $q->whereIn('id', [1, 2, 3])->whereNotNull('email'))
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE (`id` IN (?, ?, ?) AND `email` IS NOT NULL)',
+            $query->sql,
+        );
+        $this->assertSame([1, 2, 3], $query->params);
+    }
+
+    #[Test]
+    public function whereNestedOnlyGroupAtStart(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where(fn (SqlBuilder $q) => $q->where('role', '=', 'admin')->orWhere('role', '=', 'mod'))
+            ->where('active', '=', true)
+            ->toSelect();
+
+        $this->assertSame(
+            'SELECT * FROM `users` WHERE (`role` = ? OR `role` = ?) AND `active` = ?',
+            $query->sql,
+        );
+        $this->assertSame(['admin', 'mod', true], $query->params);
+    }
+
+    #[Test]
+    public function updateWithNestedWhere(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where('status', '=', 'pending')
+            ->where(fn (SqlBuilder $q) => $q->where('role', '=', 'user')->orWhere('created_at', '<', '2020-01-01'))
+            ->toUpdate(['status' => 'archived']);
+
+        $this->assertSame(
+            'UPDATE `users` SET `status` = ? WHERE `status` = ? AND (`role` = ? OR `created_at` < ?)',
+            $query->sql,
+        );
+        $this->assertSame(['archived', 'pending', 'user', '2020-01-01'], $query->params);
+    }
+
+    #[Test]
+    public function deleteWithNestedWhere(): void
+    {
+        $builder = new SqlBuilder(DatabaseDriver::MySQL);
+
+        $query = $builder
+            ->table('users')
+            ->where(fn (SqlBuilder $q) => $q->where('status', '=', 'spam')->orWhere('status', '=', 'banned'))
+            ->toDelete();
+
+        $this->assertSame(
+            'DELETE FROM `users` WHERE (`status` = ? OR `status` = ?)',
+            $query->sql,
+        );
+        $this->assertSame(['spam', 'banned'], $query->params);
+    }
 }

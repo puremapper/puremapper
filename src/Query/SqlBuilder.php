@@ -21,7 +21,7 @@ final class SqlBuilder
     /** @var array<string> */
     private array $selects = [];
 
-    /** @var array<array{type: string, column: string, operator: string, value: mixed}> */
+    /** @var array<WhereCondition|WhereNested> */
     private array $wheres = [];
 
     /** @var array<array{type: string, table: string, first: string, operator: string, second: string}> */
@@ -51,26 +51,54 @@ final class SqlBuilder
         return $this;
     }
 
-    public function where(string $column, string $operator, mixed $value): self
+    /**
+     * @param string|callable(self): void $column
+     */
+    public function where(string|callable $column, ?string $operator = null, mixed $value = null): self
     {
-        $this->wheres[] = [
-            'type' => 'and',
-            'column' => $column,
-            'operator' => $this->validateOperator($operator),
-            'value' => $value,
-        ];
+        if (\is_callable($column)) {
+            $nested = new self($this->driver);
+            $column($nested);
+
+            if (!empty($nested->wheres)) {
+                $this->wheres[] = new WhereNested(WhereBoolean::And, $nested->wheres);
+            }
+
+            return $this;
+        }
+
+        $this->wheres[] = new WhereCondition(
+            WhereBoolean::And,
+            $column,
+            $this->validateOperator($operator ?? '='),
+            $value,
+        );
 
         return $this;
     }
 
-    public function orWhere(string $column, string $operator, mixed $value): self
+    /**
+     * @param string|callable(self): void $column
+     */
+    public function orWhere(string|callable $column, ?string $operator = null, mixed $value = null): self
     {
-        $this->wheres[] = [
-            'type' => 'or',
-            'column' => $column,
-            'operator' => $this->validateOperator($operator),
-            'value' => $value,
-        ];
+        if (\is_callable($column)) {
+            $nested = new self($this->driver);
+            $column($nested);
+
+            if (!empty($nested->wheres)) {
+                $this->wheres[] = new WhereNested(WhereBoolean::Or, $nested->wheres);
+            }
+
+            return $this;
+        }
+
+        $this->wheres[] = new WhereCondition(
+            WhereBoolean::Or,
+            $column,
+            $this->validateOperator($operator ?? '='),
+            $value,
+        );
 
         return $this;
     }
@@ -84,36 +112,36 @@ final class SqlBuilder
             throw new RuntimeException('whereIn() requires a non-empty array');
         }
 
-        $this->wheres[] = [
-            'type' => 'and',
-            'column' => $column,
-            'operator' => 'IN',
-            'value' => $values,
-        ];
+        $this->wheres[] = new WhereCondition(
+            WhereBoolean::And,
+            $column,
+            'IN',
+            $values,
+        );
 
         return $this;
     }
 
     public function whereNull(string $column): self
     {
-        $this->wheres[] = [
-            'type' => 'and',
-            'column' => $column,
-            'operator' => 'IS NULL',
-            'value' => null,
-        ];
+        $this->wheres[] = new WhereCondition(
+            WhereBoolean::And,
+            $column,
+            'IS NULL',
+            null,
+        );
 
         return $this;
     }
 
     public function whereNotNull(string $column): self
     {
-        $this->wheres[] = [
-            'type' => 'and',
-            'column' => $column,
-            'operator' => 'IS NOT NULL',
-            'value' => null,
-        ];
+        $this->wheres[] = new WhereCondition(
+            WhereBoolean::And,
+            $column,
+            'IS NOT NULL',
+            null,
+        );
 
         return $this;
     }
@@ -289,30 +317,50 @@ final class SqlBuilder
      */
     private function compileWheres(array &$params): string
     {
-        if (empty($this->wheres)) {
+        return $this->compileWheresRecursive($this->wheres, $params);
+    }
+
+    /**
+     * @param array<WhereCondition|WhereNested> $wheres
+     * @param array<mixed> $params
+     */
+    private function compileWheresRecursive(array $wheres, array &$params): string
+    {
+        if (empty($wheres)) {
             return '';
         }
 
         $clauses = [];
 
-        foreach ($this->wheres as $i => $where) {
-            $column = $this->driver->quoteIdentifier($where['column']);
-            $prefix = ($i > 0) ? (strtoupper($where['type']) . ' ') : '';
+        foreach ($wheres as $i => $where) {
+            $prefix = ($i > 0) ? ($where->boolean->value . ' ') : '';
 
-            if ($where['operator'] === 'IN') {
+            if ($where instanceof WhereNested) {
+                $nestedSql = $this->compileWheresRecursive($where->clauses, $params);
+
+                if ($nestedSql !== '') {
+                    $clauses[] = $prefix . '(' . $nestedSql . ')';
+                }
+
+                continue;
+            }
+
+            $column = $this->driver->quoteIdentifier($where->column);
+
+            if ($where->operator === 'IN') {
                 /** @var array<mixed> $values */
-                $values = $where['value'];
+                $values = $where->value;
                 $placeholders = array_fill(0, \count($values), '?');
                 $clauses[] = $prefix . $column . ' IN (' . implode(', ', $placeholders) . ')';
 
                 foreach ($values as $val) {
                     $params[] = $val;
                 }
-            } elseif ($where['operator'] === 'IS NULL' || $where['operator'] === 'IS NOT NULL') {
-                $clauses[] = $prefix . $column . ' ' . $where['operator'];
+            } elseif ($where->operator === 'IS NULL' || $where->operator === 'IS NOT NULL') {
+                $clauses[] = $prefix . $column . ' ' . $where->operator;
             } else {
-                $clauses[] = $prefix . $column . ' ' . $where['operator'] . ' ?';
-                $params[] = $where['value'];
+                $clauses[] = $prefix . $column . ' ' . $where->operator . ' ?';
+                $params[] = $where->value;
             }
         }
 
