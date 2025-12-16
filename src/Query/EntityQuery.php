@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PureMapper\Query;
 
+use BadMethodCallException;
 use PureMapper\Hydration\Hydrator;
 use PureMapper\Mapping\EntityMetadata;
 use PureMapper\Mapping\MetadataRegistryInterface;
@@ -13,21 +14,30 @@ use ReflectionProperty;
 
 /**
  * @template T of object
+ *
+ * @method $this where(string $column, string $operator, mixed $value)
+ * @method $this orWhere(string $column, string $operator, mixed $value)
+ * @method $this whereIn(string $column, array $values)
+ * @method $this whereNull(string $column)
+ * @method $this whereNotNull(string $column)
+ * @method $this orderBy(string $column, string $direction = 'ASC')
+ * @method $this limit(int $limit)
+ * @method $this offset(int $offset)
  */
 final class EntityQuery
 {
-    /**
-     * @var array<int, array{column: string, operator: string, value: mixed}>
-     */
-    private array $wheres = [];
+    /** @var string[] */
+    private const COLUMN_MAPPING_METHODS = [
+        'where',
+        'orWhere',
+        'whereIn',
+        'whereNull',
+        'whereNotNull',
+        'orderBy',
+    ];
 
-    /**
-     * @var array<array{column: string, direction: string}>
-     */
-    private array $orderBys = [];
-
-    private ?int $limitValue = null;
-    private ?int $offsetValue = null;
+    private SqlBuilder $builder;
+    private EntityMetadata $metadata;
 
     /**
      * @var array<string>
@@ -43,7 +53,31 @@ final class EntityQuery
         private readonly MetadataRegistryInterface $metadataRegistry,
         private readonly Hydrator $hydrator,
         private readonly UnitOfWork $unitOfWork,
-    ) {}
+    ) {
+        $this->metadata = $this->metadataRegistry->get($this->entityClass);
+        $this->builder = $this->connection->table($this->metadata->table);
+    }
+
+    /**
+     * @param array<mixed> $args
+     */
+    public function __call(string $method, array $args): self
+    {
+        if (!method_exists($this->builder, $method)) {
+            throw new BadMethodCallException(
+                sprintf('Method %s::%s does not exist.', self::class, $method)
+            );
+        }
+
+        // Column mapping for methods that need property → column conversion
+        if (in_array($method, self::COLUMN_MAPPING_METHODS, true)) {
+            $args[0] = $this->metadata->getColumnForProperty($args[0]) ?? $args[0];
+        }
+
+        $this->builder->$method(...$args);
+
+        return $this;
+    }
 
     /**
      * @param int|string|array<string, mixed> $id
@@ -51,8 +85,6 @@ final class EntityQuery
      */
     public function find(int|string|array $id): ?object
     {
-        $metadata = $this->metadataRegistry->get($this->entityClass);
-
         // Check identity map first
         $existing = $this->unitOfWork->getIdentityMap()->get($this->entityClass, $id);
         if ($existing !== null) {
@@ -60,8 +92,9 @@ final class EntityQuery
             return $existing;
         }
 
-        $builder = $this->connection->table($metadata->table);
-        $this->applyPrimaryKeyCondition($builder, $metadata, $id);
+        // Create new builder for find (don't use $this->builder as it may have conditions)
+        $builder = $this->connection->table($this->metadata->table);
+        $this->applyPrimaryKeyCondition($builder, $id);
 
         $query = $builder->toSelect();
         $rows = $this->connection->select($query);
@@ -70,7 +103,7 @@ final class EntityQuery
             return null;
         }
 
-        return $this->hydrateAndRegister($rows[0], $metadata);
+        return $this->hydrateAndRegister($rows[0]);
     }
 
     /**
@@ -78,18 +111,16 @@ final class EntityQuery
      */
     public function first(): ?object
     {
-        $metadata = $this->metadataRegistry->get($this->entityClass);
-        $builder = $this->buildQuery($metadata);
-
-        $query = $builder->limit(1)->toSelect();
+        $this->builder->limit(1);
+        $query = $this->builder->toSelect();
         $rows = $this->connection->select($query);
 
         if (empty($rows)) {
             return null;
         }
 
-        $entity = $this->hydrateAndRegister($rows[0], $metadata);
-        $this->loadRelations([$entity], $metadata);
+        $entity = $this->hydrateAndRegister($rows[0]);
+        $this->loadRelations([$entity]);
 
         return $entity;
     }
@@ -99,67 +130,17 @@ final class EntityQuery
      */
     public function get(): array
     {
-        $metadata = $this->metadataRegistry->get($this->entityClass);
-        $builder = $this->buildQuery($metadata);
-
-        $query = $builder->toSelect();
+        $query = $this->builder->toSelect();
         $rows = $this->connection->select($query);
         $entities = [];
 
         foreach ($rows as $row) {
-            $entities[] = $this->hydrateAndRegister($row, $metadata);
+            $entities[] = $this->hydrateAndRegister($row);
         }
 
-        $this->loadRelations($entities, $metadata);
+        $this->loadRelations($entities);
 
         return $entities;
-    }
-
-    /**
-     * @return $this
-     */
-    public function where(string $column, string $operator, mixed $value): self
-    {
-        $this->wheres[] = [
-            'column' => $column,
-            'operator' => $operator,
-            'value' => $value,
-        ];
-
-        return $this;
-    }
-
-    /**
-     * @return $this
-     */
-    public function orderBy(string $column, string $direction = 'asc'): self
-    {
-        $this->orderBys[] = [
-            'column' => $column,
-            'direction' => $direction,
-        ];
-
-        return $this;
-    }
-
-    /**
-     * @return $this
-     */
-    public function limit(int $limit): self
-    {
-        $this->limitValue = $limit;
-
-        return $this;
-    }
-
-    /**
-     * @return $this
-     */
-    public function offset(int $offset): self
-    {
-        $this->offsetValue = $offset;
-
-        return $this;
     }
 
     /**
@@ -174,47 +155,21 @@ final class EntityQuery
         return $this;
     }
 
-    private function buildQuery(EntityMetadata $metadata): SqlBuilder
-    {
-        $builder = $this->connection->table($metadata->table);
-
-        foreach ($this->wheres as $where) {
-            $column = $metadata->getColumnForProperty($where['column']) ?? $where['column'];
-            $builder->where($column, $where['operator'], $where['value']);
-        }
-
-        foreach ($this->orderBys as $orderBy) {
-            $column = $metadata->getColumnForProperty($orderBy['column']) ?? $orderBy['column'];
-            $builder->orderBy($column, $orderBy['direction']);
-        }
-
-        if ($this->limitValue !== null) {
-            $builder->limit($this->limitValue);
-        }
-
-        if ($this->offsetValue !== null) {
-            $builder->offset($this->offsetValue);
-        }
-
-        return $builder;
-    }
-
     /**
      * @param int|string|array<string, mixed> $id
      */
     private function applyPrimaryKeyCondition(
         SqlBuilder $builder,
-        EntityMetadata $metadata,
         int|string|array $id,
     ): void {
-        $keys = \is_array($metadata->primaryKey)
-            ? $metadata->primaryKey
-            : [$metadata->primaryKey];
+        $keys = \is_array($this->metadata->primaryKey)
+            ? $this->metadata->primaryKey
+            : [$this->metadata->primaryKey];
 
         $values = \is_array($id) ? $id : [$id];
 
         foreach ($keys as $i => $key) {
-            $column = $metadata->fields[$key]->column ?? $key;
+            $column = $this->metadata->fields[$key]->column ?? $key;
             $value = \is_array($id) ? ($id[$key] ?? $values[$i] ?? null) : $id;
             $builder->where($column, '=', $value);
         }
@@ -224,10 +179,10 @@ final class EntityQuery
      * @param array<string, mixed> $row
      * @return T
      */
-    private function hydrateAndRegister(array $row, EntityMetadata $metadata): object
+    private function hydrateAndRegister(array $row): object
     {
         // Check identity map first
-        $id = $this->extractIdFromRow($row, $metadata);
+        $id = $this->extractIdFromRow($row);
         $existing = $this->unitOfWork->getIdentityMap()->get($this->entityClass, $id);
 
         if ($existing !== null) {
@@ -245,20 +200,20 @@ final class EntityQuery
     /**
      * @param array<string, mixed> $row
      */
-    private function extractIdFromRow(array $row, EntityMetadata $metadata): mixed
+    private function extractIdFromRow(array $row): mixed
     {
-        $keys = \is_array($metadata->primaryKey)
-            ? $metadata->primaryKey
-            : [$metadata->primaryKey];
+        $keys = \is_array($this->metadata->primaryKey)
+            ? $this->metadata->primaryKey
+            : [$this->metadata->primaryKey];
 
         if (\count($keys) === 1) {
-            $column = $metadata->fields[$keys[0]]->column ?? $keys[0];
+            $column = $this->metadata->fields[$keys[0]]->column ?? $keys[0];
             return $row[$column] ?? null;
         }
 
         $id = [];
         foreach ($keys as $key) {
-            $column = $metadata->fields[$key]->column ?? $key;
+            $column = $this->metadata->fields[$key]->column ?? $key;
             $id[$key] = $row[$column] ?? null;
         }
 
@@ -268,24 +223,24 @@ final class EntityQuery
     /**
      * @param array<T> $entities
      */
-    private function loadRelations(array $entities, EntityMetadata $metadata): void
+    private function loadRelations(array $entities): void
     {
         if (empty($entities) || empty($this->eagerLoad)) {
             return;
         }
 
         foreach ($this->eagerLoad as $relationName) {
-            if (!isset($metadata->relations[$relationName])) {
+            if (!isset($this->metadata->relations[$relationName])) {
                 continue;
             }
 
-            $relation = $metadata->relations[$relationName];
+            $relation = $this->metadata->relations[$relationName];
 
             match ($relation->type) {
-                RelationType::HasOne => $this->loadHasOne($entities, $metadata, $relationName),
-                RelationType::HasMany => $this->loadHasMany($entities, $metadata, $relationName),
-                RelationType::BelongsTo => $this->loadBelongsTo($entities, $metadata, $relationName),
-                RelationType::ManyToMany => $this->loadManyToMany($entities, $metadata, $relationName),
+                RelationType::HasOne => $this->loadHasOne($entities, $relationName),
+                RelationType::HasMany => $this->loadHasMany($entities, $relationName),
+                RelationType::BelongsTo => $this->loadBelongsTo($entities, $relationName),
+                RelationType::ManyToMany => $this->loadManyToMany($entities, $relationName),
             };
         }
     }
@@ -293,9 +248,9 @@ final class EntityQuery
     /**
      * @param array<object> $entities
      */
-    private function loadHasOne(array $entities, EntityMetadata $metadata, string $relationName): void
+    private function loadHasOne(array $entities, string $relationName): void
     {
-        $relation = $metadata->relations[$relationName];
+        $relation = $this->metadata->relations[$relationName];
         $targetMetadata = $this->metadataRegistry->get($relation->targetEntity);
         $foreignKey = $relation->foreignKey;
 
@@ -339,9 +294,9 @@ final class EntityQuery
     /**
      * @param array<object> $entities
      */
-    private function loadHasMany(array $entities, EntityMetadata $metadata, string $relationName): void
+    private function loadHasMany(array $entities, string $relationName): void
     {
-        $relation = $metadata->relations[$relationName];
+        $relation = $this->metadata->relations[$relationName];
         $targetMetadata = $this->metadataRegistry->get($relation->targetEntity);
         $foreignKey = $relation->foreignKey;
 
@@ -385,9 +340,9 @@ final class EntityQuery
     /**
      * @param array<object> $entities
      */
-    private function loadBelongsTo(array $entities, EntityMetadata $metadata, string $relationName): void
+    private function loadBelongsTo(array $entities, string $relationName): void
     {
-        $relation = $metadata->relations[$relationName];
+        $relation = $this->metadata->relations[$relationName];
         $targetMetadata = $this->metadataRegistry->get($relation->targetEntity);
         $foreignKey = $relation->foreignKey;
         $targetPk = \is_array($targetMetadata->primaryKey)
@@ -396,7 +351,7 @@ final class EntityQuery
         $targetPkColumn = $targetMetadata->fields[$targetPk]->column ?? $targetPk;
 
         // Collect foreign key values
-        $fkReflection = new ReflectionProperty($this->entityClass, $metadata->getPropertyForColumn($foreignKey) ?? $foreignKey);
+        $fkReflection = new ReflectionProperty($this->entityClass, $this->metadata->getPropertyForColumn($foreignKey) ?? $foreignKey);
         $fkValues = [];
         foreach ($entities as $entity) {
             if ($fkReflection->isInitialized($entity)) {
@@ -438,9 +393,9 @@ final class EntityQuery
     /**
      * @param array<object> $entities
      */
-    private function loadManyToMany(array $entities, EntityMetadata $metadata, string $relationName): void
+    private function loadManyToMany(array $entities, string $relationName): void
     {
-        $relation = $metadata->relations[$relationName];
+        $relation = $this->metadata->relations[$relationName];
         $targetMetadata = $this->metadataRegistry->get($relation->targetEntity);
         $pivotTable = $relation->pivotTable;
         $foreignKey = $relation->foreignKey;
