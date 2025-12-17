@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2025-12-17
+
+### Added
+
+- **Nested Where Conditions**: Support for nested where conditions using closures, enabling complex query building:
+  ```php
+  $query->where('status', 'active')
+        ->where(function($q) {
+            $q->where('role', 'admin')
+              ->orWhere('role', 'moderator');
+        });
+  ```
+
+### Fixed
+
+- **PHPStan Compatibility**: Added proper type hints for `whereIn` and `__call` methods to improve static analysis support
+
 ## [2.0.0] - 2025-12-16
 
 ### Added
